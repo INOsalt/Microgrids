@@ -338,7 +338,6 @@ class OptimizationMicrogrid:
                     ind=[f"Pcha_{self.microgrid.id}_{k}", f"Pdis_{self.microgrid.id}_{k}"],
                     val=[self.microgrid.ebattery, -self.microgrid.ebattery])
 
-                # 注意这里使用了[cumulative_soc_expr]，将SparsePair对象放入列表中
                 self.problem.linear_constraints.add(
                     lin_expr=[cumulative_soc_expr],  # lin_expr接受的是SparsePair对象的列表
                     senses=["L"],
@@ -350,7 +349,9 @@ class OptimizationMicrogrid:
                     rhs=[self.microgrid.ebattery * self.microgrid.socmin - cumulative_soc]
                 )
                 # 更新累积 SOC 的表达式，适用于后续时段
-
+            #柴油机约束
+            #汽轮机约束
+            #热电联产约束
         except CplexError as exc:
             print(exc)
             return None
