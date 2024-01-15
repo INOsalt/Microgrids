@@ -25,7 +25,7 @@ class Microgrid:
         #self.C_re = C_re #弃电惩罚
 
 class OptimizationMicrogrid:
-    def __init__(self, microgrid, num_microgrid, C_buy, C_sell):
+    def __init__(self, microgrid, num_microgrid, problem, C_buy, C_sell):
         # microgrid微电网实体, num_microgrid微电网数量,
         self.microgrid = microgrid
         self.num_microgrid = num_microgrid
@@ -45,7 +45,7 @@ class OptimizationMicrogrid:
         # self.C_de = microgrid.C_de  # 燃气轮
         self.C_buy = C_buy  # 购电价格
         self.C_sell = C_sell  # 售电价格
-        self.problem = cplex.Cplex()  # 或者从外部传入
+        self.problem = problem
         self.variables_info = []  # 存储变量信息
         self.constraints_info = []  # 存储约束信息
 
@@ -291,11 +291,11 @@ class OptimizationMicrogrid:
                 # 电池充放电功率约束
                 self.problem.linear_constraints.add(
                     lin_expr=[cplex.SparsePair(ind=[f"Pbat_{self.microgrid.id}_{k}"], val=[1.0])],
-                    senses=["L"], rhs=[self.microgrid.Pcs]
+                    senses=["L"], rhs=[self.microgrid.pcs]
                 )
                 self.problem.linear_constraints.add(
                     lin_expr=[cplex.SparsePair(ind=[f"Pbat_{self.microgrid.id}_{k}"], val=[1.0])],
-                    senses=["G"], rhs=[-self.microgrid.Pcs]
+                    senses=["G"], rhs=[-self.microgrid.pcs]
                 )
                 # 为 Pcha 和 Pdis 添加类似的约束
 
@@ -331,21 +331,23 @@ class OptimizationMicrogrid:
 
             # SOC 约束
             # 注意：此处 SOC 约束的实现需要小心处理
-            cumulative_soc = self.microgrid.soc0 * self.microgrid.Ebattery
+            cumulative_soc = self.microgrid.soc0 * self.microgrid.ebattery
             for k in range(24):
-                # 注意：这里的 Pcha_{k} 和 Pdis_{k} 应该是特定于微电网实体的
+                # 累积SOC的表达式
                 cumulative_soc_expr = cplex.SparsePair(
                     ind=[f"Pcha_{self.microgrid.id}_{k}", f"Pdis_{self.microgrid.id}_{k}"],
-                    val=[self.microgrid.Ebattery, -self.microgrid.Ebattery])
+                    val=[self.microgrid.ebattery, -self.microgrid.ebattery])
+
+                # 注意这里使用了[cumulative_soc_expr]，将SparsePair对象放入列表中
                 self.problem.linear_constraints.add(
-                    lin_expr=cumulative_soc_expr,
+                    lin_expr=[cumulative_soc_expr],  # lin_expr接受的是SparsePair对象的列表
                     senses=["L"],
-                    rhs=[self.microgrid.Ebattery * self.microgrid.socmax - cumulative_soc]
+                    rhs=[self.microgrid.ebattery * self.microgrid.socmax - cumulative_soc]
                 )
                 self.problem.linear_constraints.add(
-                    lin_expr=cumulative_soc_expr,
+                    lin_expr=[cumulative_soc_expr],  # 同上
                     senses=["G"],
-                    rhs=[self.microgrid.Ebattery * self.microgrid.socmin - cumulative_soc]
+                    rhs=[self.microgrid.ebattery * self.microgrid.socmin - cumulative_soc]
                 )
                 # 更新累积 SOC 的表达式，适用于后续时段
 
@@ -362,12 +364,12 @@ class OptimizationMicrogrid:
             # 添加燃气轮机成本
             if self.microgrid.C_de is not None:
                 for k in range(24):
-                    objective.append((f"Pde_{self.microgrid.id}_{k}", self.C_de))
+                    objective.append((f"Pde_{self.microgrid.id}_{k}", self.microgrid.C_de))
 
             # 添加柴油轮机成本
             if self.microgrid.C_mt is not None:
                 for k in range(24):
-                    objective.append((f"Pmt_{self.microgrid.id}_{k}", self.C_de))
+                    objective.append((f"Pmt_{self.microgrid.id}_{k}", self.microgrid.C_de))
 
             # 添加储能成本（注意：绝对值问题需要特别处理）
             for k in range(24):
@@ -397,7 +399,7 @@ class OptimizationMicrogrid:
             # 设置目标函数
             objective = problem.objective.set_linear(objective)
             problem.objective.set_sense(problem.objective.sense.minimize)
-            return objective
+
 
         except CplexError as exc:
             print(exc)

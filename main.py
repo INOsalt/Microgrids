@@ -1,6 +1,28 @@
-# main.py
-
 from Microgrid import Microgrid, OptimizationMicrogrid
+import cplex
+from cplex.exceptions import CplexError
+
+#整体优化============
+class TotalOptimizationManager:
+    def __init__(self, microgrids, C_buy, C_sell):
+        self.microgrids = microgrids
+        self.C_buy = C_buy
+        self.C_sell = C_sell
+        self.problem = cplex.Cplex()
+
+    def setup(self):
+        for grid in self.microgrids:
+            optimization = OptimizationMicrogrid(grid, len(self.microgrids), self.problem, self.C_buy, self.C_sell)
+
+            # 将总体问题实例传递给每个方法
+            optimization.add_variable()
+            optimization.add_constraints()
+            optimization.add_objective()
+
+    def solve(self):
+        self.problem.solve()
+
+#==================
 #全局
 C_buy = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
         0.82, 0.82, 0.82, 0.53, 0.53, 0.53, 0.82, 0.82, 0.82, 0.53, 0.53, 0.53]
@@ -55,10 +77,16 @@ num_microgrid = 2
 grid1 = Microgrid(id1, load_1, POWER_1, POWER_MIC_1, ebattery_1, socmin_1, socmax_1, soc0_1, pcs_1, P_pv=P_pv_1, P_wt=P_wt_1, C_mt=None, C_de=None)
 grid2 = Microgrid(id2, load_2, POWER_2, POWER_MIC_2, ebattery_2, socmin_2, socmax_2, soc0_2, pcs_2, P_pv=P_pv_2, P_wt=None, C_mt=None, C_de=C_de_2)
 
-# 创建 Optimization 实例并求解
-optimization1 = OptimizationMicrogrid(grid1, num_microgrid, C_buy, C_sell)
-optimization2 = OptimizationMicrogrid(grid1, num_microgrid, C_buy, C_sell)
-optimization1.add_variable
+# # 创建 Optimization 实例并求解
+# optimization1 = OptimizationMicrogrid(grid1, num_microgrid, C_buy, C_sell)
+# optimization2 = OptimizationMicrogrid(grid1, num_microgrid, C_buy, C_sell)
 
-optimization2 = OptimizationMicrogrid(grid1, num_microgrid, C_buy, C_sell)
+# 创建 TotalOptimizationManager 实例
+total_optimization_manager = TotalOptimizationManager([grid1, grid2], C_buy, C_sell)
+
+# 设置优化问题（整合所有微电网的变量、约束和目标函数）
+total_optimization_manager.setup()
+
+# 求解整合的优化问题
+total_optimization_manager.solve()
 
