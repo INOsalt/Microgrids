@@ -8,7 +8,7 @@ def powerflow(Pev):
     S = [33, 34, 35, 36, 37]
     zhilu = np.ones(37)
     for k in range(37):
-        if k + 1 in S:  # MATLAB索引从1开始，Python从0开始
+        if k + 1 in S:
             zhilu[k] = 0
 
     # 阻抗矩阵 Branch_data,共47条支路/47条边
@@ -209,23 +209,23 @@ def powerflow(Pev):
         delt[1:33] += uu[0:32]
         u[1:33] += uu[32:64]
 
-        # 将当前的 u, uu, pp, qq, delt, J 添加到 DataFrame
-        current_record = pd.DataFrame({
-            'iteration': [k],
-            'u': [u.tolist()],
-            'uu': [uu.tolist()],
-            'pp': [pp.tolist()],
-            'qq': [qq.tolist()],
-            'delt': [delt.tolist()],
-            'J_min': [J.min()],
-            'J_max': [J.max()]
-        })
-        records = pd.concat([records, current_record], ignore_index=True)
-        # 修改计数器
-        k += 1
+        # # 将当前的 u, uu, pp, qq, delt, J 添加到 DataFrame
+        # current_record = pd.DataFrame({
+        #     'iteration': [k],
+        #     'u': [u.tolist()],
+        #     'uu': [uu.tolist()],
+        #     'pp': [pp.tolist()],
+        #     'qq': [qq.tolist()],
+        #     'delt': [delt.tolist()],
+        #     'J_min': [J.min()],
+        #     'J_max': [J.max()]
+        # })
+        # records = pd.concat([records, current_record], ignore_index=True)
+        # # 修改计数器
+        # k += 1
 
-    # 保存到 CSV
-    records.to_csv('load_flow_records.csv', index=False)
+    # # 保存到 CSV
+    # records.to_csv('load_flow_records.csv', index=False)
 
         # 计算节点 1 的有功、无功
     p0 = u[0] * u * (G[0, :] * np.cos(delt[0] - delt) + B[0, :] * np.sin(delt[0] - delt))
