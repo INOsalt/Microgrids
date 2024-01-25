@@ -11,7 +11,7 @@ def powerflow(Pev):
         if k + 1 in S:
             zhilu[k] = 0
 
-    # 阻抗矩阵 Branch_data,共47条支路/47条边
+    # 阻抗矩阵 Branch_data,共37条支路/37条边
     # Branch_data=[Branch_data(:,1)代表支路起始节点1编号，Branch_data(:,2)代表支路末节点2编号，Branch_data(:,[3,4])代表阻抗  ]
     Branch_data = np.array([
         [0, 1, 0.0922, 0.0470],
@@ -221,8 +221,8 @@ def powerflow(Pev):
         #     'J_max': [J.max()]
         # })
         # records = pd.concat([records, current_record], ignore_index=True)
-        # # 修改计数器
-        # k += 1
+        # 修改计数器
+        k += 1
 
     # # 保存到 CSV
     # records.to_csv('load_flow_records.csv', index=False)
