@@ -65,7 +65,7 @@ def obj_all(x, iter):
     Cost_E = np.sum(Pgrid_out * price_out) + np.sum(Pgrid_in * price_in) # 收入：MGO买电的量乘以电价
 
     # 计算总目标函数
-    F = Cost_E - Fdown
+    F = - Cost_E + Fdown #成本
 
     return F
 
@@ -119,8 +119,8 @@ price_C = ym[24:48]
 MGO(price_E, price_C)
 
 # 打印最终结果
-print(f'maximum：{fym}')
-print(f'Maximum point position：{ym}')
+print(f'min：{fym}')
+print(f'Minimum point position：{ym}')
 
 # 计时结束
 end_time = time.time()

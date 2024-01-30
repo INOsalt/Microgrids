@@ -1,6 +1,7 @@
 
 import numpy as np
-from docplex.mp.model import Model
+
+
 class Microgrid:
     def __init__(self, id, load, POWER, POWER_MIC, ebattery, socmin, socmax, soc0, pcs, P_pv=None, P_wt=None, C_mt=None, C_de=None, C_re=None):
         #ID标识
@@ -314,6 +315,14 @@ class OptimizationMicrogrid:
                 curtail_Pwt = self.model.max(0, self.microgrid.P_wt[k] - self.Pwt[k])
                 objective_expr += curtail_Pwt * self.microgrid.C_re  # 风电弃电惩罚
 
+        LL = self.microgrid.load # + Ldr_1 + Lidr_1
+        # Peak-Valley Difference Indicator (峰谷差指标)
+        FGX = np.max(LL) - np.min(LL)
+        # Deviation Indicator (偏差指标)
+        Fpl = np.sum(np.abs(LL - np.mean(LL)))
+        # Cost of Demand Response (CostDR)
+        #CostDR = np.sum(Ldr_1 * 0.025 + Lidr_1 * 0.05)
+        objective_expr += FGX * 20 + Fpl
         return objective_expr
 
 

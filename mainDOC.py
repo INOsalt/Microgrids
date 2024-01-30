@@ -58,6 +58,17 @@ class TotalOptimizationManager:
 
         solve_details = self.model.solve_details
 
+        # 打开一个文本文件用于写入
+        with open('solution_output.txt', 'w') as file:
+            # 检查模型是否有解
+            if solution:
+                file.write("Solution found!\n")
+                # 对于模型中的每个变量，写入其解决方案值
+                for v in self.model.iter_variables():
+                    file.write(f"{v.name}: {v.solution_value}\n")
+            else:
+                file.write("No solution found.\n")
+
         if solve_details.status == 'optimal':
             print("Optimal solution found.")
             print("Objective value:", self.model.objective_value)
@@ -75,18 +86,6 @@ class TotalOptimizationManager:
                 unsatisfied_constraints = self.model.find_unsatisfied_constraints()
                 for constraint in unsatisfied_constraints:
                     print(constraint)
-
-        # 打开一个文本文件用于写入
-        with open('solution_output.txt', 'w') as file:
-            # 检查模型是否有解
-            if solution:
-                file.write("Solution found!\n")
-                # 对于模型中的每个变量，写入其解决方案值
-                for v in self.model.iter_variables():
-                    file.write(f"{v.name}: {v.solution_value}\n")
-            else:
-                file.write("No solution found.\n")
-
 
 
     def calculate_grid_power_flows(self):
@@ -335,14 +334,14 @@ def MGO(C_buy, C_sell):
     # # 对每个微电网绘制图表
     # for microgrid_id in range(num_microgrid):
     #     visualization.plot_microgrid_charts(microgrid_id)
-
+    #
     return Fdown, Pgrid_out, Pgrid_in
 
 
 
 
 #测试#==================
-# #全局
+#全局
 # C_buy = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
 #         0.82, 0.82, 0.82, 0.53, 0.53, 0.53, 0.82, 0.82, 0.82, 0.53, 0.53, 0.53]
 #

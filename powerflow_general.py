@@ -138,6 +138,17 @@ def powerflow(Branch_data, Nodedata, zhilu, num_nodes, num_branches, UB, SB, Pev
 
     return uresult, deltresult, node
 
+
+
+
+
+
+
+
+
+
+
+
 # 示例调用
 # Branch_data=[Branch_data(:,1)代表支路起始节点1编号，Branch_data(:,2)代表支路末节点2编号，Branch_data(:,[3,4])代表阻抗  ]
 Branch_data = np.array([
