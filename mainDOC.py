@@ -324,16 +324,16 @@ def MGO(C_buy, C_sell):
 
     # #===============画图=================
 
-    # #打印结果
-    # total_optimization_manager.print_optimization_results(solution)
-    #
-    # # 创建可视化实例
-    # visualization = Visualization(total_optimization_manager, [grid1, grid2, grid3], num_microgrid, total_optimization_manager.model)
-    # visualization.extract_solution_to_dict()  # 提取解决方案
-    #
-    # # 对每个微电网绘制图表
-    # for microgrid_id in range(num_microgrid):
-    #     visualization.plot_microgrid_charts(microgrid_id)
+    #打印结果
+    total_optimization_manager.print_optimization_results(solution)
+
+    # 创建可视化实例
+    visualization = Visualization(total_optimization_manager, [grid1, grid2, grid3], num_microgrid, total_optimization_manager.model)
+    visualization.extract_solution_to_dict()  # 提取解决方案
+
+    # 对每个微电网绘制图表
+    for microgrid_id in range(num_microgrid):
+        visualization.plot_microgrid_charts(microgrid_id)
     #
     return Fdown, Pgrid_out, Pgrid_in
 
@@ -342,13 +342,13 @@ def MGO(C_buy, C_sell):
 
 #测试#==================
 #全局
-# C_buy = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
-#         0.82, 0.82, 0.82, 0.53, 0.53, 0.53, 0.82, 0.82, 0.82, 0.53, 0.53, 0.53]
-#
-# C_sell = [0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.42, 0.42, 0.42, 0.65, 0.65,
-#          0.65, 0.65, 0.65, 0.42, 0.42, 0.42, 0.65, 0.65, 0.65, 0.42, 0.42, 0.42]
-# Fdown, Pgrid_out, Pgrid_in = MGO(C_buy, C_sell)
-# print(Fdown, Pgrid_out, Pgrid_in)
+C_buy = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
+        0.82, 0.82, 0.82, 0.53, 0.53, 0.53, 0.82, 0.82, 0.82, 0.53, 0.53, 0.53]
+
+C_sell = [0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.42, 0.42, 0.42, 0.65, 0.65,
+         0.65, 0.65, 0.65, 0.42, 0.42, 0.42, 0.65, 0.65, 0.65, 0.42, 0.42, 0.42]
+Fdown, Pgrid_out, Pgrid_in = MGO(C_buy, C_sell)
+print(Fdown, Pgrid_out, Pgrid_in)
 
 # #全局
 # C_buy = [0.38, 0.38, 0.38, 0.38, 0.38, 0.38, 0.82, 0.82, 0.82, 1.35, 1.35, 1.35, 1.35, 1.35, 0.82, 0.82, 0.82, 1.35, 1.35, 1.35, 1.35, 1.35, 0.38, 0.38]
