@@ -129,18 +129,10 @@ class Markov:
         self.labels = labels
         # self.start_points = start_points
         # self.end_points = end_points
-        self.departure_distributions = {}
-        self.back_distributions = {}
         # 创建一个空的Counter对象来存储边的出现次数
         self.edge_counts = Counter()
-        # 初始化出发概率的数组
-        self.departure_step = np.zeros(num_nodes)
-        self.back_step = np.zeros(num_nodes)
-        # 初始化停留概率的数组
-        self.departure_stop = np.zeros(num_nodes)
-        self.back_stop = np.zeros(num_nodes)
         # 初始化转移矩阵为零矩阵
-        self.TM_departure = np.zeros((num_nodes, num_nodes))
+
         self.TM_back = np.zeros((num_nodes, num_nodes))
         self.TM = np.zeros((num_nodes, num_nodes))
         # 创建起点和终点的映射，这些映射将原始标识符映射到图中的索引
@@ -212,48 +204,46 @@ class Markov:
 
 
     def normal_distribution(self):
-        # 定义时间的上下限
-        lower, upper = 0, 24
-        # 出发时间分布
-        departure_time = {}
+        lower, upper = 0, 24  # 定义时间的上下限
 
+        # 初始化出发时间分布字典
+        self.departure_distributions = {}
+
+        # 遍历每个起点和终点，计算它们之间的出发时间分布
         for start in self.start_mapping:
             for end in self.end_mapping:
                 try:
-                    # 假设self.G是要用来计算最短路径的图对象
-                    path = nx.shortest_path(self.G_now, source=start, target=end)
-                    # 记录路径，使用映射后的标签
-                    departure_time[(start, end)] = path
+                    # 使用NetworkX获取起点到终点的最短路径长度（即边的数量）
+                    path_length = nx.shortest_path_length(self.G, source=start, target=end, weight=None)
+
+                    # 计算转移次数对应的时间增加，这里假设每次转移增加0.05小时
+                    transfer_time = path_length * 0.05
+
+                    # 设置mu基于路径上的边数，每条边通过时间增加0.05小时
+                    mu = 9 - transfer_time  # 这里的9是示例中的起始时间，根据实际情况调整
+
+                    sigma = 0.5  # 假定标准差为1，实际应根据数据调整
+
+                    # 转换均值和标准差为截断正态分布的参数
+                    a, b = (lower - mu) / sigma, (upper - mu) / sigma
+                    # 存储每个起点到终点的出发时间分布
+                    self.departure_distributions[(start, end)] = truncnorm(a, b, loc=mu, scale=sigma)
+
                 except nx.NetworkXNoPath:
                     print(f"No path found from {start} to {end}.")
                 except KeyError:
                     print(f"One of the nodes {start} or {end} does not exist.")
-
-        # 计算路径长度
-        path_lengths = {key: len(path) for key, path in departure_time.items()}
-
-        for start_point in self.start_mapping:
-            transfer_counts = [path_lengths[(start_point, node_mapping[end])] for end in end_points if
-                               (start_point, node_mapping[end]) in path_lengths]
-            if transfer_counts:
-                average_transfer_count = np.mean(transfer_counts)
-                mu = 9 - average_transfer_count * 0.05
-                sigma = 1
-                # 转换均值和标准差为截断正态分布的参数
-                a, b = (lower - mu) / sigma, (upper - mu) / sigma
-                # 为每个起点创建截断正态分布的出发时间
-                self.departure_distributions[start_point] = truncnorm(a, b, loc=mu, scale=sigma)
 
         # 返程时间分布
         self.back_distributions = {}
 
         for start_point in self.end_mapping:
             mu = 18
-            sigma = 1
+            sigma = 0.5
             a, b = (lower - mu) / sigma, (upper - mu) / sigma
             self.back_distributions[start_point] = truncnorm(a, b, loc=mu, scale=sigma)
 
-        # 出发车队分布
+        # 出发车队数量
         # 初始化两个长度为40的数列
         self.departure_car = np.zeros(num_nodes, dtype=int)
         self.back_car = np.zeros(num_nodes, dtype=int)
@@ -267,21 +257,29 @@ class Markov:
             self.back_car[end] = len(self.start_mapping)
 
     def time_possibility(self, time):
+        # 初始化存储PDF和CDF值的字典
+        self.departure_step = {}
+        self.departure_stop = {}
+        self.back_step = np.zeros(num_nodes)
+        self.back_stop = np.zeros(num_nodes)
+        # 对于出发概率
+        # 遍历所有可能的起点和终点组合
+        for start in self.start_mapping:
+            for end in self.end_mapping:
+                # 检查是否为这对起点和终点定义了正态分布
+                if (start, end) in self.departure_distributions:
+                    # 获取起点到终点的正态分布对象
+                    norm_dist = self.departure_distributions[(start, end)]
+                    # 计算在时间x的PDF值并存储
+                    self.departure_step[(start, end)] = norm_dist.pdf(time)
+                    # 计算在时间x的CDF值，并计算停留概率存储
+                    self.departure_stop[(start, end)] = 1 - norm_dist.cdf(time)
+                else:
+                    # 如果没有为这对节点定义正态分布，PDF记作0，CDF记作1
+                    self.departure_step[(start, end)] = 0
+                    self.departure_stop[(start, end)] = 1
 
         for i in range(num_nodes):  # 遍历40个节点
-            # 对于出发概率
-            if i in self.departure_distributions:
-                # 获取节点的正态分布
-                norm_dist = self.departure_distributions[i]
-                # 计算在时间x的PDF值并存储在向量中
-                self.departure_step[i] = norm_dist.pdf(time)
-                # 计算停留概率并存储在向量中，使用1 - CDF(time)来计算
-                self.departure_stop[i] = 1 - norm_dist.cdf(time)
-            else:
-                # 如果没有为节点定义正态分布，出发概率记作0
-                self.departure_step[i] = 0
-                self.departure_stop[i] = 1
-
             # 对于返回概率
             if i in self.back_distributions:
                 # 获取节点的正态分布
@@ -296,99 +294,74 @@ class Markov:
                 self.back_stop[i] = 1
 
     def calculate_arrival_distributions(self):
+        lower, upper = 0, 24  # 定义时间的上下限
         self.departure_arrive = {}  # 存储从起点到终点的到达时间分布
         self.back_arrive = {}  # 存储从终点返回起点的到达时间分布
 
         edge_time = 0.05  # 每条边的时间
 
-        # 处理出发到达分布
-        for end in self.end_mapping:
-            total_mean = 0
-            total_variance = 0
-            count = 0
+        # 处理出发到达分布 服从正态分布
+        for end_point in self.end_mapping:
+            mu = 9
+            sigma = 0.5
+            a, b = (lower - mu) / sigma, (upper - mu) / sigma
+            self.departure_arrive[end_point] = truncnorm(a, b, loc=mu, scale=sigma)
 
-            for start in self.start_mapping:
-                # 计算路径长度
-                path_length = nx.shortest_path_length(self.G_now, source=start, target=end, weight='time')
-                # 计算总的转移时间
-                transfer_time = path_length * edge_time
+        # 处理返回起点的分布
+        # 遍历所有可能的起点和终点组合
+        for start in self.end_mapping:
+            for end in self.start_mapping:
+                try:
+                    # 使用NetworkX获取起点到终点的最短路径长度（即边的数量）
+                    path_length = nx.shortest_path_length(self.G, source=start, target=end, weight=None)
 
-                # 获取起点的出发时间分布
-                if start in self.departure_distributions:
-                    departure_distribution = self.departure_distributions[start]
-                    mean = departure_distribution.mean()
-                    variance = departure_distribution.var()
+                    # 计算转移次数对应的时间增加，这里假设每次转移增加0.05小时
+                    transfer_time = path_length * 0.05
 
-                    # 计算平移后的均值和方差
-                    shifted_mean = mean + transfer_time
-                    shifted_variance = variance  # 方差在平移过程中不变
+                    # 设置mu基于路径上的边数，每条边通过时间增加0.05小时
+                    mu = 18 + transfer_time
+                    sigma = 0.5
 
-                    # 累加均值和方差
-                    total_mean += shifted_mean
-                    total_variance += shifted_variance
-                    count += 1
+                    # 转换均值和标准差为截断正态分布的参数
+                    a, b = (lower - mu) / sigma, (upper - mu) / sigma
+                    # 存储每个起点到终点的出发时间分布
+                    self.back_arrive[(start, end)] = truncnorm(a, b, loc=mu, scale=sigma)
 
-            if count > 0:
-                # 计算合并后的均值和方差
-                combined_mean = total_mean / count
-                combined_variance = total_variance / count
-
-                # 存储合并后的分布
-                self.departure_arrive[end] = norm(loc=combined_mean, scale=np.sqrt(combined_variance))
-
-        # 处理返回起点的分布，逻辑与上述相同，只是起点和终点交换
-        for start in self.start_mapping:
-            total_mean = 0
-            total_variance = 0
-            count = 0
-
-            for end in self.end_mapping:
-                path_length = nx.shortest_path_length(self.G_now, source=end, target=start, weight='time')
-                transfer_time = path_length * edge_time
-
-                if end in self.back_distributions:
-                    back_distribution = self.back_distributions[end]
-                    mean = back_distribution.mean()
-                    variance = back_distribution.var()
-
-                    shifted_mean = mean + transfer_time
-                    shifted_variance = variance
-
-                    total_mean += shifted_mean
-                    total_variance += shifted_variance
-                    count += 1
-
-            if count > 0:
-                combined_mean = total_mean / count
-                combined_variance = total_variance / count
-
-                self.back_arrive[start] = norm(loc=combined_mean, scale=np.sqrt(combined_variance))
+                except nx.NetworkXNoPath:
+                    print(f"No path found from {start} to {end}.")
+                except KeyError:
+                    print(f"One of the nodes {start} or {end} does not exist.")
 
     def arrive_possibility(self, time):
         # 初始化存储特定时间点PDF值的字典
-        self.departure_arrive_pdf = {}
         self.back_arrive_pdf = {}
+        self.departure_arrive_pdf = np.zeros(num_nodes)
 
         for i in range(num_nodes):  # 遍历40个节点
-            # 对于出发到达概率
+            # 对于上班到达概率
             if i in self.departure_arrive:
                 # 获取节点的正态分布
                 norm_dist = self.departure_arrive[i]
-                # 计算在时间x的PDF值并存储在另一个字典中
+                # 计算在时间x的PDF值
                 self.departure_arrive_pdf[i] = norm_dist.pdf(time)
             else:
                 # 如果没有为节点定义正态分布，出发到达概率记作0
                 self.departure_arrive_pdf[i] = 0
 
-            # 对于返回到达概率
-            if i in self.back_arrive:
-                # 获取节点的正态分布
-                norm_dist = self.back_arrive[i]
-                # 计算在时间x的PDF值并存储在另一个字典中
-                self.back_arrive_pdf[i] = norm_dist.pdf(time)
-            else:
-                # 如果没有为节点定义正态分布，返回到达概率记作0
-                self.back_arrive_pdf[i] = 0
+        # 对于返回起点的概率
+        # 遍历所有可能的起点和终点组合
+        for start in self.end_mapping:
+            for end in self.start_mapping:
+                # 检查是否为这对起点和终点定义了正态分布
+                if (start, end) in self.back_arrive:
+                    # 获取起点到终点的正态分布对象
+                    norm_dist = self.back_arrive[(start, end)]
+                    # 计算在时间x的PDF值并存储
+                    self.back_arrive_pdf[(start, end)] = norm_dist.pdf(time)
+                else:
+                    # 如果没有为这对节点定义正态分布，PDF记作0，
+                    self.back_arrive_pdf[(start, end)] = 0
+
     def update_graph_weights(self, time):  # 更新self.G
 
         # 确定当前是否为高峰期
@@ -397,23 +370,23 @@ class Markov:
         # 选择相应的权重矩阵
         self.G = self.G_peak if is_peak else self.G_offpeak
 
-    def departure_probability(self):
+    def departure_probability(self, end):
         # 存储每个起点到终点的最短路径的字典
         shortest_paths_departure = {}
         # 初始化每个节点出发的边的数量的统计为长度为40的零数组
         self.efn_departure = np.zeros(num_nodes, dtype=int)
+        self.TM_departure = np.zeros((num_nodes, num_nodes))
 
         for start in self.start_mapping:
-            for end in self.end_mapping:
-                # 使用NetworkX计算最短路径
-                try:
-                    path = nx.shortest_path(self.G, source=start, target=end, weight='weight')
-                    # 记录路径
-                    shortest_paths_departure[(start, end)] = path
-                except nx.NetworkXNoPath:
-                    print(f"No path found from {start} to {end}.")
-                except KeyError:
-                    print(f"One of the nodes {start} or {end} does not exist.")
+            # 使用NetworkX计算最短路径
+            try:
+                path = nx.shortest_path(self.G, source=start, target=end, weight='weight')
+                # 记录路径
+                shortest_paths_departure[(start, end)] = path
+            except nx.NetworkXNoPath:
+                print(f"No path found from {start} to {end}.")
+            except KeyError:
+                print(f"One of the nodes {start} or {end} does not exist.")
 
         # 根据最短路径记录每条路径所经过的边。
         path_edges = {}
@@ -432,13 +405,7 @@ class Markov:
                 source, target = edge
                 self.TM_departure[source, target] += 1
 
-        # 将计数转换为概率
-        for i in range(num_nodes):
-            total_edges_from_node = np.sum(self.TM_departure[i, :])
-            if total_edges_from_node > 0:
-                self.TM_departure[i, :] /= total_edges_from_node
-
-    def back_probability(self):
+    def back_probability(self, end):
         # 初始化每个节点出发的边的数量的统计为长度为40的零数组
         self.efn_back = np.zeros(num_nodes, dtype=int)
 
@@ -474,106 +441,108 @@ class Markov:
                 source, target = edge
                 self.TM_back[source, target] += 1
 
-        # 将计数转换为概率
-        for i in range(num_nodes):
-            total_edges_from_node = np.sum(self.TM_back[i, :])
-            if total_edges_from_node > 0:
-                self.TM_back[i, :] /= total_edges_from_node
+        # # 将计数转换为概率
+        # for i in range(num_nodes):
+        #     total_edges_from_node = np.sum(self.TM_back[i, :])
+        #     if total_edges_from_node > 0:
+        #         self.TM_back[i, :] /= total_edges_from_node
 
-    # def generate_TM(self): #没有扩展的
-    #     # 根据更新后的状态计算转移矩阵
-    #     for i in range(num_nodes):
-    #         total = (self.departure_car[i] * (self.departure_stop[i] + self.departure_step[i]) +
-    #                  (self.efn_departure[i] - self.departure_car[i]) * self.departure_step[i] +
-    #                  self.back_car[i] * (self.back_stop[i] + self.back_step[i]) +
-    #                  (self.efn_back[i] - self.back_car[i]) * self.back_step[i])
-    #         if total > 0:
-    #             self.TM[i, i] = (self.departure_car[i] * self.departure_stop[i] + self.back_car[i] * self.back_stop[i]) / total
-    #             for j in range(num_nodes):
-    #                 if i != j:
-    #                     self.TM[i, j] = (self.TM_departure[i, j] * (self.departure_car[i] * self.departure_step[i] +
-    #                                                                (self.efn_departure[i] - self.departure_car[i]) *
-    #                                                                self.departure_step[i]) +
-    #                                      self.TM_back[i, j] * (self.back_car[i] * self.back_step[i] +
-    #                                                            (self.efn_back[i] - self.back_car[i]) *
-    #                                                            self.back_step[i]))/ total
-    #         else:
-    #             # 如果总数为0，则节点i将100%地停留在自身位置
-    #             self.TM[i, i] = 1
-    #             for j in range(num_nodes):
-    #                 if i != j:
-    #                     self.TM[i, j] = 0
-    #
-    #     return self.TM
+    def car_flow(self, time):
+        self.update_graph_weights(time)  # 更新self.G
+        self.normal_distribution()  # 计算出发概率 self.departure_distributions self.back_distributions
+        self.calculate_arrival_distributions()  # 到达概率分布self.departure_arrive
+        # 计算当天的self.departure_step[(start, end)] self.departure_stop = {} self.back_step = [] self.back_stop = []
+        self.time_possibility(time)
+        self.arrive_possibility(time)  # self.back_arrive_pdf = {} self.departure_arrive_pdf = []
 
-    def generate_TM(self):
+        # 初始化边的车流量矩阵
+        self.edge_flow_matrix = np.zeros((num_nodes, num_nodes))
+        # 边到达的车流量矩阵
+        self.edge_stop_matrix = np.zeros((num_nodes, num_nodes))
+
+        # 上班的车队
+        for end in self.end_mapping:
+            self.departure_probability(end)  # 更新self.TM_departure
+            # 遍历所有边，更新车流量
+            for i in range(num_nodes):
+                for j in range(num_nodes):
+                    if self.G.has_edge(i, j):
+                        # 如果存在从i到j的边，更新这条边的车流量
+                        if (i, end) in self.departure_step:
+                            self.edge_flow_matrix[i, j] += (self.TM_departure[i, j] * self.departure_step[(i, end)] *
+                                                            (1 - self.departure_arrive_pdf[j]))
+                            self.edge_stop_matrix[i, j] += (self.TM_departure[i, j] * self.departure_step[(i, end)] *
+                                                            self.departure_arrive_pdf[j])
+
+        # 下班的车队
+        for end in self.start_mapping:
+            self.back_probability()  # 更新self.TM_back
+            for i in range(num_nodes):
+                for j in range(num_nodes):
+                    if self.G.has_edge(i, j):
+                        if (i, end) in self.back_arrive_pdf:
+                            # 对于每条边，累加返回流量
+                            self.edge_flow_matrix[i, j] += (self.TM_back[i, j] * self.back_step[i] *
+                                                            (1 - self.back_arrive_pdf[(i, end)]))
+                            self.edge_stop_matrix[i, j] += (self.TM_back[i, j] * self.back_step[i] *
+                                                            self.back_arrive_pdf[(i, end)])
+                        else:
+                            self.edge_flow_matrix[i, j] += self.TM_back[i, j] * self.back_step[i]
+                            self.edge_stop_matrix[i, j] += 0
+        # 初始化静止车流量数组
+        self.edge_stop = np.zeros(num_nodes)
+
+        # 遍历所有可能的起点和终点组合
+        for start in self.start_mapping:
+            for end in self.end_mapping:
+                # 检查是否为这对起点和终点定义了停留概率
+                if (start, end) in self.departure_stop:
+                    # 如果存在定义的停留概率，累加到对应节点的静止车流量
+                    self.edge_stop[start] += self.departure_stop[(start, end)]
+
+    def generate_TM(self, time):
         # 初始化扩展转移矩阵
         self.TM = np.zeros((2 * num_nodes, 2 * num_nodes))
+        self.car_flow(time) #计算车流量
 
-        # 遍历所有节点以填充转移矩阵
+        # 计算Pi到Mj的车队数和Mi到Pj的车流量
         for i in range(num_nodes):
-            # 计算转移概率
             for j in range(num_nodes):
-                if i != j:
-                    # 1. Mi 到 Mj
-                    self.TM[i + num_nodes, j + num_nodes] = (self.TM_departure[i, j] * (
-                                (self.efn_departure[i] - self.departure_car[i]) * self.departure_step[i]) * (
-                                                                         1 - self.departure_arrive_pdf[j])) + (
-                                                                        self.TM_back[i, j] * (
-                                                                            (self.efn_back[i] - self.back_car[i]) *
-                                                                            self.back_step[i]) * (
-                                                                                    1 - self.back_arrive_pdf[j]))
+                # 计算从Pi到Mj的转移概率
+                if self.efn_departure[i] > 0:  # 确保分母不为0
+                    self.TM[i, num_nodes + j] = self.edge_flow_matrix[i, j] * (
+                                self.departure_car[i] / self.efn_departure[i])
+                else:
+                    self.TM[i, num_nodes + j] = 0
 
-                    # 2. Pi 到 Mj
-                    self.TM[i, j + num_nodes] = self.TM_departure[i, j] * (
-                                self.departure_car[i] * self.departure_step[i]) + self.TM_back[i, j] * (
-                                                            self.back_car[i] * self.back_step[i])
+                # 计算从Mi到Pj的转移概率
+                self.TM[num_nodes + i, j] = self.edge_stop_matrix[i, j]
 
-                    # 3. Mi 到 Pj
-                    self.TM[i + num_nodes, j] = (self.TM_departure[i, j] * (
-                                (self.efn_departure[i] - self.departure_car[i]) * self.departure_step[i])) * \
-                                                self.departure_arrive_pdf[j] + (self.TM_back[i, j] * (
-                                (self.efn_back[i] - self.back_car[i]) * self.back_step[i]) * self.back_arrive_pdf[j])
+        # 处理Pi到Pi的转移概率和Mi到Mi的转移概率
+        for i in range(num_nodes):
+            # Pi到Pi的转移概率等于节点i上停泊车辆的比例
+            self.TM[i, i] = self.edge_stop[i]
 
-            # 4. Pi 到 Pj (始终为0，因为没有直接的Pi到Pj的转移)
-
-            # 5. Mi 到 Mi (始终为0，因为Mi状态假设车辆总是在移动)
-
-            # 6. Pi 到 Pi
-            self.TM[i, i] = self.departure_car[i] * self.departure_stop[i] + self.back_car[i] * self.back_stop[i]
-
-        # 标准化转移矩阵的每一行，确保概率和为1
-        for i in range(2 * num_nodes):
-            row_sum = np.sum(self.TM[i, :])
-            if row_sum > 0:
-                self.TM[i, :] /= row_sum
-            else:
-                # 如果该行总和为0（即该状态没有出去的转移），则保持在原状态
-                self.TM[i, i] = 1.0
+            # Mi到Mi的转移概率设置为0，因为一旦车辆开始移动，就假设它不会停留在原地
+            self.TM[num_nodes + i, num_nodes + i] = 0
 
         return self.TM
 
-    def run_simulation(self):
-        self.road_weight()  # 生成两个权重矩阵的G G_offpeak G_peak
-        self.normal_distribution()  # 计算出发概率 self.departure_distributions self.back_distributions
-        self.calculate_arrival_distributions()  # 到达概率分布self.departure_arrive
+    def run_simulation(self, initial_state):
+        # 初始化状态向量记录
+        state_vectors = {}
+
+        # 当前状态向量
+        current_state = np.array(initial_state)
 
         # 以0.05小时（3分钟）为步长循环1到24小时
         for time in np.arange(1, 24.05, 0.05):
-            self.time_possibility(time)  # 计算当天的self.departure_step self.back_step
-            self.arrive_possibility(time) # self.departure_arrive[i]
-            self.update_graph_weights(time)  # 更新self.G
-            self.departure_probability()  # self.TM_departure
-            self.back_probability()
-
-            TM = self.generate_TM()  # 生成转移矩阵
+            TM = self.generate_TM(time)  # 生成转移矩阵
             self.transition_matrices[time] = TM
 
-            # # 计算并保存稳态分布
-            # A = TM - np.eye(num_nodes)
-            # A = np.vstack([A.T, np.ones(num_nodes)])
-            # b = np.zeros(num_nodes + 1)
-            # b[-1] = 1
+            # 更新当前状态向量
+            current_state = np.dot(TM, current_state)
+            state_vectors[time] = current_state
 
             # 调整稳态分布的计算方法以适应扩展状态空间
             A = TM - np.eye(2 * num_nodes)
@@ -607,10 +576,9 @@ class Markov:
         # 将DataFrame保存到CSV文件
         steady_states_df.to_csv(path_or_buf="SS.csv", index_label="Time")
 
-
-
-        #这里可以添加代码将结果保存到文件或进行其他处理
         print("Simulation complete.")
+        # 在函数结束时，返回状态向量记录
+        return state_vectors
 
 
 # def visualize_graph(G, title="Graph Visualization"):#检查权重
@@ -634,8 +602,16 @@ start_points = [202, 203, 204, 205, 206, 208, 209, 303, 304, 305, 306, 307, 308,
                 318, 401, 402, 403, 404, 405, 406, 407]
 end_points = [101, 102, 103, 104, 105, 106]
 
+# 初始化所有车辆都停泊在起点，没有车辆在移动状态
+initial_state = np.zeros(2 * num_nodes)
+starts = [node_mapping[point] for point in start_points]
+for start in starts:
+    initial_state[start] = 200  # 假设每个起点最初有一辆车停泊
+
 markov = Markov(G, labels, start_points, end_points)
-markov.run_simulation()  # 更新权重并生成高峰期和非高峰期图
+markov.run_simulation(initial_state)
+
+# 更新权重并生成高峰期和非高峰期图
 # # 可视化高峰期图
 # visualize_graph(markov.G_peak, "High Peak Traffic Graph Visualization")
 #
