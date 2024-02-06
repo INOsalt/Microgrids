@@ -413,16 +413,15 @@ class Markov:
         shortest_paths_back = {}
 
         for start in self.end_mapping:
-            for end in self.start_mapping:
-                # 使用NetworkX计算最短路径
-                try:
-                    path = nx.shortest_path(self.G, source=start, target=end, weight='weight')
-                    # 记录路径
-                    shortest_paths_back[(start, end)] = path
-                except nx.NetworkXNoPath:
-                    print(f"No path found from {start} to {end}.")
-                except KeyError:
-                    print(f"One of the nodes {start} or {end} does not exist.")
+            # 使用NetworkX计算最短路径
+            try:
+                path = nx.shortest_path(self.G, source=start, target=end, weight='weight')
+                # 记录路径
+                shortest_paths_back[(start, end)] = path
+            except nx.NetworkXNoPath:
+                print(f"No path found from {start} to {end}.")
+            except KeyError:
+                print(f"One of the nodes {start} or {end} does not exist.")
 
         # 根据最短路径记录每条路径所经过的边。
         path_edges = {}
@@ -476,7 +475,7 @@ class Markov:
 
         # 下班的车队
         for end in self.start_mapping:
-            self.back_probability()  # 更新self.TM_back
+            self.back_probability(end)  # 更新self.TM_back
             for i in range(num_nodes):
                 for j in range(num_nodes):
                     if self.G.has_edge(i, j):
