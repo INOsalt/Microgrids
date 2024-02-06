@@ -575,6 +575,13 @@ class Markov:
         # 将DataFrame保存到CSV文件
         steady_states_df.to_csv(path_or_buf="SS.csv", index_label="Time")
 
+        # 将状态向量保存到DataFrame中
+        df_state_vectors = pd.DataFrame.from_dict(state_vectors, orient='index')
+        df_state_vectors.columns = [f'State_{i}' for i in range(len(initial_state))]
+
+        # 保存DataFrame到CSV文件
+        df_state_vectors.to_csv(path_or_buf="SV.csv", index_label="Time")
+
         print("Simulation complete.")
         # 在函数结束时，返回状态向量记录
         return state_vectors
