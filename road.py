@@ -295,6 +295,100 @@ class Markov:
                 self.back_step[i] = 0
                 self.back_stop[i] = 1
 
+    def calculate_arrival_distributions(self):
+        self.departure_arrive = {}  # 存储从起点到终点的到达时间分布
+        self.back_arrive = {}  # 存储从终点返回起点的到达时间分布
+
+        edge_time = 0.05  # 每条边的时间
+
+        # 处理出发到达分布
+        for end in self.end_mapping:
+            total_mean = 0
+            total_variance = 0
+            count = 0
+
+            for start in self.start_mapping:
+                # 计算路径长度
+                path_length = nx.shortest_path_length(self.G_now, source=start, target=end, weight='time')
+                # 计算总的转移时间
+                transfer_time = path_length * edge_time
+
+                # 获取起点的出发时间分布
+                if start in self.departure_distributions:
+                    departure_distribution = self.departure_distributions[start]
+                    mean = departure_distribution.mean()
+                    variance = departure_distribution.var()
+
+                    # 计算平移后的均值和方差
+                    shifted_mean = mean + transfer_time
+                    shifted_variance = variance  # 方差在平移过程中不变
+
+                    # 累加均值和方差
+                    total_mean += shifted_mean
+                    total_variance += shifted_variance
+                    count += 1
+
+            if count > 0:
+                # 计算合并后的均值和方差
+                combined_mean = total_mean / count
+                combined_variance = total_variance / count
+
+                # 存储合并后的分布
+                self.departure_arrive[end] = norm(loc=combined_mean, scale=np.sqrt(combined_variance))
+
+        # 处理返回起点的分布，逻辑与上述相同，只是起点和终点交换
+        for start in self.start_mapping:
+            total_mean = 0
+            total_variance = 0
+            count = 0
+
+            for end in self.end_mapping:
+                path_length = nx.shortest_path_length(self.G_now, source=end, target=start, weight='time')
+                transfer_time = path_length * edge_time
+
+                if end in self.back_distributions:
+                    back_distribution = self.back_distributions[end]
+                    mean = back_distribution.mean()
+                    variance = back_distribution.var()
+
+                    shifted_mean = mean + transfer_time
+                    shifted_variance = variance
+
+                    total_mean += shifted_mean
+                    total_variance += shifted_variance
+                    count += 1
+
+            if count > 0:
+                combined_mean = total_mean / count
+                combined_variance = total_variance / count
+
+                self.back_arrive[start] = norm(loc=combined_mean, scale=np.sqrt(combined_variance))
+
+    def arrive_possibility(self, time):
+        # 初始化存储特定时间点PDF值的字典
+        self.departure_arrive_pdf = {}
+        self.back_arrive_pdf = {}
+
+        for i in range(num_nodes):  # 遍历40个节点
+            # 对于出发到达概率
+            if i in self.departure_arrive:
+                # 获取节点的正态分布
+                norm_dist = self.departure_arrive[i]
+                # 计算在时间x的PDF值并存储在另一个字典中
+                self.departure_arrive_pdf[i] = norm_dist.pdf(time)
+            else:
+                # 如果没有为节点定义正态分布，出发到达概率记作0
+                self.departure_arrive_pdf[i] = 0
+
+            # 对于返回到达概率
+            if i in self.back_arrive:
+                # 获取节点的正态分布
+                norm_dist = self.back_arrive[i]
+                # 计算在时间x的PDF值并存储在另一个字典中
+                self.back_arrive_pdf[i] = norm_dist.pdf(time)
+            else:
+                # 如果没有为节点定义正态分布，返回到达概率记作0
+                self.back_arrive_pdf[i] = 0
     def update_graph_weights(self, time):  # 更新self.G
 
         # 确定当前是否为高峰期
@@ -386,39 +480,88 @@ class Markov:
             if total_edges_from_node > 0:
                 self.TM_back[i, :] /= total_edges_from_node
 
+    # def generate_TM(self): #没有扩展的
+    #     # 根据更新后的状态计算转移矩阵
+    #     for i in range(num_nodes):
+    #         total = (self.departure_car[i] * (self.departure_stop[i] + self.departure_step[i]) +
+    #                  (self.efn_departure[i] - self.departure_car[i]) * self.departure_step[i] +
+    #                  self.back_car[i] * (self.back_stop[i] + self.back_step[i]) +
+    #                  (self.efn_back[i] - self.back_car[i]) * self.back_step[i])
+    #         if total > 0:
+    #             self.TM[i, i] = (self.departure_car[i] * self.departure_stop[i] + self.back_car[i] * self.back_stop[i]) / total
+    #             for j in range(num_nodes):
+    #                 if i != j:
+    #                     self.TM[i, j] = (self.TM_departure[i, j] * (self.departure_car[i] * self.departure_step[i] +
+    #                                                                (self.efn_departure[i] - self.departure_car[i]) *
+    #                                                                self.departure_step[i]) +
+    #                                      self.TM_back[i, j] * (self.back_car[i] * self.back_step[i] +
+    #                                                            (self.efn_back[i] - self.back_car[i]) *
+    #                                                            self.back_step[i]))/ total
+    #         else:
+    #             # 如果总数为0，则节点i将100%地停留在自身位置
+    #             self.TM[i, i] = 1
+    #             for j in range(num_nodes):
+    #                 if i != j:
+    #                     self.TM[i, j] = 0
+    #
+    #     return self.TM
+
     def generate_TM(self):
-        # 根据更新后的状态计算转移矩阵
+        # 初始化扩展转移矩阵
+        self.TM = np.zeros((2 * num_nodes, 2 * num_nodes))
+
+        # 遍历所有节点以填充转移矩阵
         for i in range(num_nodes):
-            total = (self.departure_car[i] * (self.departure_stop[i] + self.departure_step[i]) +
-                     (self.efn_departure[i] - self.departure_car[i]) * self.departure_step[i] +
-                     self.back_car[i] * (self.back_stop[i] + self.back_step[i]) +
-                     (self.efn_back[i] - self.back_car[i]) * self.back_step[i])
-            if total > 0:
-                self.TM[i, i] = (self.departure_car[i] * self.departure_stop[i] + self.back_car[i] * self.back_stop[i]) / total
-                for j in range(num_nodes):
-                    if i != j:
-                        self.TM[i, j] = (self.TM_departure[i, j] * (self.departure_car[i] * self.departure_step[i] +
-                                                                   (self.efn_departure[i] - self.departure_car[i]) *
-                                                                   self.departure_step[i]) +
-                                         self.TM_back[i, j] * (self.back_car[i] * self.back_step[i] +
-                                                               (self.efn_back[i] - self.back_car[i]) *
-                                                               self.back_step[i]))/ total
+            # 计算转移概率
+            for j in range(num_nodes):
+                if i != j:
+                    # 1. Mi 到 Mj
+                    self.TM[i + num_nodes, j + num_nodes] = (self.TM_departure[i, j] * (
+                                (self.efn_departure[i] - self.departure_car[i]) * self.departure_step[i]) * (
+                                                                         1 - self.departure_arrive_pdf[j])) + (
+                                                                        self.TM_back[i, j] * (
+                                                                            (self.efn_back[i] - self.back_car[i]) *
+                                                                            self.back_step[i]) * (
+                                                                                    1 - self.back_arrive_pdf[j]))
+
+                    # 2. Pi 到 Mj
+                    self.TM[i, j + num_nodes] = self.TM_departure[i, j] * (
+                                self.departure_car[i] * self.departure_step[i]) + self.TM_back[i, j] * (
+                                                            self.back_car[i] * self.back_step[i])
+
+                    # 3. Mi 到 Pj
+                    self.TM[i + num_nodes, j] = (self.TM_departure[i, j] * (
+                                (self.efn_departure[i] - self.departure_car[i]) * self.departure_step[i])) * \
+                                                self.departure_arrive_pdf[j] + (self.TM_back[i, j] * (
+                                (self.efn_back[i] - self.back_car[i]) * self.back_step[i]) * self.back_arrive_pdf[j])
+
+            # 4. Pi 到 Pj (始终为0，因为没有直接的Pi到Pj的转移)
+
+            # 5. Mi 到 Mi (始终为0，因为Mi状态假设车辆总是在移动)
+
+            # 6. Pi 到 Pi
+            self.TM[i, i] = self.departure_car[i] * self.departure_stop[i] + self.back_car[i] * self.back_stop[i]
+
+        # 标准化转移矩阵的每一行，确保概率和为1
+        for i in range(2 * num_nodes):
+            row_sum = np.sum(self.TM[i, :])
+            if row_sum > 0:
+                self.TM[i, :] /= row_sum
             else:
-                # 如果总数为0，则节点i将100%地停留在自身位置
-                self.TM[i, i] = 1
-                for j in range(num_nodes):
-                    if i != j:
-                        self.TM[i, j] = 0
+                # 如果该行总和为0（即该状态没有出去的转移），则保持在原状态
+                self.TM[i, i] = 1.0
 
         return self.TM
 
     def run_simulation(self):
         self.road_weight()  # 生成两个权重矩阵的G G_offpeak G_peak
         self.normal_distribution()  # 计算出发概率 self.departure_distributions self.back_distributions
+        self.calculate_arrival_distributions()  # 到达概率分布self.departure_arrive
 
         # 以0.05小时（3分钟）为步长循环1到24小时
         for time in np.arange(1, 24.05, 0.05):
             self.time_possibility(time)  # 计算当天的self.departure_step self.back_step
+            self.arrive_possibility(time) # self.departure_arrive[i]
             self.update_graph_weights(time)  # 更新self.G
             self.departure_probability()  # self.TM_departure
             self.back_probability()
@@ -426,11 +569,18 @@ class Markov:
             TM = self.generate_TM()  # 生成转移矩阵
             self.transition_matrices[time] = TM
 
-            # 计算并保存稳态分布
-            A = TM - np.eye(num_nodes)
-            A = np.vstack([A.T, np.ones(num_nodes)])
-            b = np.zeros(num_nodes + 1)
+            # # 计算并保存稳态分布
+            # A = TM - np.eye(num_nodes)
+            # A = np.vstack([A.T, np.ones(num_nodes)])
+            # b = np.zeros(num_nodes + 1)
+            # b[-1] = 1
+
+            # 调整稳态分布的计算方法以适应扩展状态空间
+            A = TM - np.eye(2 * num_nodes)
+            A = np.vstack([A.T, np.ones(2 * num_nodes)])
+            b = np.zeros(2 * num_nodes + 1)
             b[-1] = 1
+
             try:
                 steady_state = np.linalg.lstsq(A, b, rcond=None)[0]
                 self.steady_states[time] = steady_state
