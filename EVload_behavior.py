@@ -85,7 +85,7 @@ def EV_load(price_1, price_2, price_3, price_4):
     transition_vars = {pair: mdl.continuous_var(lb=0, ub=1, name=f'transition_var_{pair[0]}_{pair[1]}')
                        for pair in spaced_connection}
 
-    """
+
     for time, matrix in transition_matrices.items():
         for (i, j), var in transition_vars.items():
             sum_parking = matrix[j + 40, 0:40].sum()
@@ -118,8 +118,7 @@ def EV_load(price_1, price_2, price_3, price_4):
             matrix[i + 40, j] += var * matrix[i + 40, j + 40]  # 更新[i+40,j]
             matrix[i + 40, j] *= (1 - var)  # 更新[i+40,j]
             matrix[i + 40, l] += matrix[i + 40, j] * var  # 更新[i+40,l]
-    #不能这么更新矩阵，因为求解前var没有实际的值        
-    """
+
     # 首先，基于direct_connection创建一个映射，记录每个j节点所有的目标节点k
     j_to_k_map = {}
     for (j, k) in direct_connection:
@@ -144,13 +143,13 @@ def EV_load(price_1, price_2, price_3, price_4):
                 aux_vars[time][(i + 40, j)] = mdl.continuous_var(name=f"aux_{time}_{i + 40}_{j}")
             if (i + 40, j + 40) not in aux_vars[time]:
                 aux_vars[time][(i + 40, j + 40)] = mdl.continuous_var(name=f"aux_{time}_{i + 40}_{j + 40}")
-        """
+
         # 根据j_to_k_map为direct_connection中的每个(j, k)创建辅助变量
         for j, ks in j_to_k_map.items():
             for k in ks:
                 aux1_vars[time][(j + 40, k)] = mdl.continuous_var(name=f"aux1_{time}_{j + 40}_{k}")
                 aux1_vars[time][(j + 40, k + 40)] = mdl.continuous_var(name=f"aux1_{time}_{j + 40}_{k + 40}")
-        """
+
     for time, matrix in transition_matrices.items():# time不用额外定义， 这里是表示车可以提前停下
         for (i, j) in spaced_connection:
             # 确定辅助变量与静态矩阵元素之间的关系
@@ -168,7 +167,7 @@ def EV_load(price_1, price_2, price_3, price_4):
             mdl.add_constraint(aux_vars[time][(i + 40, j)] >= matrix[i + 40, j])
             # aux_vars[time][(i+40, j)] <= sum_elements
             mdl.add_constraint(aux_vars[time][(i + 40, j)] <= sum_elements)
-        """
+
         for j, ks in j_to_k_map.items():
             # 对于每个j及其所有的k，我们需要基于aux_vars[time][(i + 40, j)]计算adjustment
             # 注意：这里我们需要一个逻辑来确定每个j对应的i值，这可能依赖于您的具体业务逻辑
@@ -180,7 +179,7 @@ def EV_load(price_1, price_2, price_3, price_4):
                     aux_vars[time][(j + 40, k)] = mdl.continuous_var(name=f"aux_{time}_{j + 40}_{k}")
                     mdl.add_constraint(aux_vars[time][(j + 40, k)] == matrix[j + 40, k] - adjustment)
                     mdl.add_constraint(aux_vars[time][(j + 40, k + 40)] == matrix[j + 40, k + 40] + adjustment)
-        """
+
 
     # 初始化每个时间点的辅助矩阵
     aux_matrices = {time: [[None for _ in range(80)] for _ in range(80)] for time in keys}
@@ -196,14 +195,14 @@ def EV_load(price_1, price_2, price_3, price_4):
         for (i, j) in spaced_connection:
             aux_matrices[time][i + 40][j] = aux_vars[time][(i + 40, j)]
             aux_matrices[time][i + 40][j + 40] = aux_vars[time][(i + 40, j + 40)]
-        """
+
         # 为j_to_k_map中的(j, k)放置辅助变量
         for j, ks in j_to_k_map.items():
             for k in ks:
                 aux_matrices[time][j + 40][k] = aux1_vars[time][(j + 40, k)]
                 if (j + 40, k + 40) in aux1_vars[time]:  # 检查是否存在此辅助变量
                     aux_matrices[time][j + 40][k + 40] = aux1_vars[time][(j + 40, k + 40)]
-        """
+
     # 对于每个时间点和节点，充电车数量不超过最大车辆数
     X = initial_EV.copy()  # 复制初始状态以避免修改原始数据
     for time in keys:

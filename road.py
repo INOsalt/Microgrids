@@ -491,6 +491,29 @@ class Markov:
         for time in np.arange(0, 24.05, 0.05):
             TM = self.generate_TM(time)  # 生成转移矩阵
             self.transition_matrices[time] = TM
+        # # 计算每30分钟的转移矩阵并保存
+        # self.calculate_and_save_half_hour_TMs()
+
+    def calculate_and_save_half_hour_TMs(self):
+        times = sorted(self.transition_matrices.keys())
+        half_hour_steps = 10  # 每半小时的步数
+        half_hour_matrices = []
+
+        # 检查目录是否存在，如果不存在则创建
+        output_dir = "TMhalfhour"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        for i in range(0, len(times), half_hour_steps):
+            # 获取当前半小时段内的转移矩阵
+            current_matrices = [self.transition_matrices[time] for time in times[i:i + half_hour_steps]]
+            # 计算这些矩阵的乘积
+            half_hour_matrix = np.linalg.multi_dot(current_matrices)
+            half_hour_matrices.append(half_hour_matrix)
+            # 保存到文件
+            np.savetxt(f"{output_dir}/TM_{i // half_hour_steps}.txt", half_hour_matrix)
+
+        return half_hour_matrices
 
             # 更新当前状态向量
             #current_state = np.dot(current_state, TM)
@@ -517,7 +540,7 @@ class Markov:
 
             # 保存转移矩阵到CSV文件
             pd.DataFrame(TM).to_csv(filepath, index=False)
-
+        
         # # 构造保存稳态的文件名
         # # 键（时间）成为DataFrame的索引，每个稳态分布数组成为一行
         # steady_states_df = pd.DataFrame.from_dict(self.steady_states, orient='index')
@@ -564,6 +587,9 @@ initial_state = np.zeros(2 * num_nodes)
 starts = [node_mapping[point] for point in start_points]
 for start in starts:
     initial_state[start] = 1000  # 假设每个起点最初有一辆车停泊
+
+np.set_printoptions(threshold=np.inf)
+print(initial_state)
 
 #markov = Markov(G, labels, start_points, end_points)
 # markov.update_graph_weights(8)
