@@ -205,19 +205,23 @@ def EV_load(price_1, price_2, price_3, price_4):
                     aux_matrices[time][j + 40][k + 40] = aux1_vars[time][(j + 40, k + 40)]
         """
     # 对于每个时间点和节点，充电车数量不超过最大车辆数
-    X = initial_EV
+    X = initial_EV.copy()  # 复制初始状态以避免修改原始数据
     for time in keys:
-        X = X * aux_matrices[time]  # 你需要根据转移矩阵更新X
+        updated_X = np.dot(X, aux_matrices[time])  # 使用矩阵乘法更新X
         for i in range(40):
-            mdl.add_constraint(charging_cars[i, time] <= X[i], f'max_cars_constraint_{i}_{time}')
+            current_val = updated_X[i]  # 获取更新后的单个节点状态
+            mdl.add_constraint(charging_cars[i, time] <= current_val, f'max_cars_constraint_{i}_{time}')
+        X = updated_X  # 更新X以用于下一个时间步的计算
 
     # 充电功率约束
-    Y = charging_requirement
+    Y = charging_requirement.copy()
     for time in keys:
-        Y = Y * aux_matrices[time]
+        updated_Y = np.dot(Y, aux_matrices[time])
         for i in range(40):
             power = power_0_to_5 if i in range(6) else power_6_to_39
-            mdl.add_constraint(charging_cars[i, time] * power <= Y[i], f'max_power_constraint_{i}_{time}')
+            current_val = updated_Y[i]
+            mdl.add_constraint(charging_cars[i, time] * power <= current_val, f'max_power_constraint_{i}_{time}')
+        Y = updated_Y  # 更新X以用于下一个时间步的计算
 
     total_charging_demand = np.sum(charging_requirement)
 
