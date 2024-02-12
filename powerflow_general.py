@@ -231,7 +231,7 @@ Nodedata = np.array([
 num_nodes = 33    # 节点数量
 num_branches = 37 # 支路数量
 Pev_example = 10          # 额外负荷
-S = [33, 34, 35, 36, 37]
+S = [33, 34, 35, 36, 37]  #pcc
 zhilu = np.ones(37)
 for k in range(37):
     if k + 1 in S:

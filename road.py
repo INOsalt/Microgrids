@@ -214,9 +214,11 @@ class Markov:
 
         # 初始化出发时间分布字典
         self.departure_distributions = {}
+        self.charging_frequency = np.zeros(2 * num_nodes)
 
         # 遍历每个起点和终点，计算它们之间的出发时间分布
         for start in range(num_nodes): # 从任何一个点出发都需要
+            total_charging_frequency = 0
             for end in self.end_mapping:
                 try:
                     # 使用NetworkX获取起点到终点的最短路径长度（即边的数量）
@@ -227,9 +229,14 @@ class Markov:
                     # 设置mu基于路径上的边数，每条边通过时间增加0.05小时
                     mu = 9 - transfer_time  # 这里的9是示例中的起始时间，根据实际情况调整
                     sigma = 0.5  # 假定标准差为0.5
-                    # # 转换均值和标准差为截断正态分布的参数
-                    # a, b = (lower - mu) / sigma, (upper - mu) / sigma
-                    # # 存储每个起点到终点的出发时间分布
+
+                    #充电频率
+                    commuting_consumption = path_length * 2 * 2 * 0.195
+                    if start in self.start_mapping:
+                        driving_time = 70 * 0.6 / commuting_consumption
+                        charging_frequency = 1 / driving_time
+                        total_charging_frequency += charging_frequency
+
                     # self.departure_distributions[(start, end)] = truncnorm(a, b, loc=mu, scale=sigma)
                     self.departure_distributions[(start, end)] = norm(loc=mu, scale=sigma)
 
@@ -237,6 +244,15 @@ class Markov:
                     print(f"No path found from {start} to {end}.")
                 except KeyError:
                     print(f"One of the nodes {start} or {end} does not exist.")
+
+            if start in self.start_mapping:
+                # 将每个起点的充电频率平均值存储到 charging_frequency 数组中
+                self.charging_frequency[start] = total_charging_frequency / len(self.end_mapping)
+        np.set_printoptions(threshold=np.inf)
+        print(len(self.charging_frequency))
+        output_file_path = "charging_frequency_output.txt"
+        np.savetxt(output_file_path, self.charging_frequency)
+
 
         # 返程时间分布
         self.back_distributions = {}
@@ -462,6 +478,7 @@ class Markov:
 
         return self.TM
 
+
     def run_simulation(self, initial_state):
         # 初始化状态向量记录
         state_vectors = {}
@@ -476,8 +493,8 @@ class Markov:
             self.transition_matrices[time] = TM
 
             # 更新当前状态向量
-            current_state = np.dot(current_state, TM)
-            state_vectors[time] = current_state
+            #current_state = np.dot(current_state, TM)
+            #state_vectors[time] = current_state
 
             # # 稳态分布的计算方法以适应扩展状态空间
             # A = TM - np.eye(2 * num_nodes)
@@ -490,7 +507,7 @@ class Markov:
             #     self.steady_states[time] = steady_state
             # except np.linalg.LinAlgError:
             #     print(f"Cannot compute steady state for time {time} due to numerical issues.")
-
+"""
             # 构造保存转移矩阵的文件名
             output_dir = "TM"
             hour = int(time)
@@ -520,7 +537,7 @@ class Markov:
         # 在函数结束时，返回状态向量记录
         return state_vectors
 
-
+"""
 # def visualize_graph(G, title="Graph Visualization"):#检查权重
 #     plt.figure(figsize=(12, 8))  # 设置画布大小
 #     pos = nx.spring_layout(G, seed=42)  # 为图G生成布局
@@ -548,11 +565,11 @@ starts = [node_mapping[point] for point in start_points]
 for start in starts:
     initial_state[start] = 1000  # 假设每个起点最初有一辆车停泊
 
-markov = Markov(G, labels, start_points, end_points)
+#markov = Markov(G, labels, start_points, end_points)
 # markov.update_graph_weights(8)
 # markov.normal_distribution()
 # markov.time_possibility(8)
-markov.run_simulation(initial_state)
+#markov.run_simulation(initial_state)
 
 # 更新权重并生成高峰期和非高峰期图
 # # 可视化高峰期图
@@ -560,3 +577,29 @@ markov.run_simulation(initial_state)
 #
 # # 可视化非高峰期图
 # visualize_graph(markov.G_offpeak, "Off-Peak Traffic Graph Visualization")
+
+end_points = [101, 102, 103, 104, 105, 106]  # 终点列表
+mapped_end_points = [node_mapping[point] for point in end_points]  # 使用映射后的终点
+
+direct_edges = set()  # 直接相连的边
+one_hop_edges = set()  # 间隔一个点连接的边
+
+# 查找直接相连的边
+for u, v in G.edges():
+    if u in mapped_end_points or v in mapped_end_points:
+        direct_edges.add((v, u))
+
+# 查找间隔一个点连接的边
+for point in mapped_end_points:
+    neighbors = list(G.neighbors(point))
+    for neighbor in neighbors:
+        second_neighbors = list(G.neighbors(neighbor))
+        for second_neighbor in second_neighbors:
+            if second_neighbor not in mapped_end_points and second_neighbor != point:
+                one_hop_edges.add((second_neighbor, neighbor))
+                if (point, neighbor) not in direct_edges:  # 确保不重复添加直接相连的边
+                    one_hop_edges.add((neighbor, point))
+
+# 输出结果
+print("直接相连的边:", direct_edges)
+print("间隔一个点连接的边:", one_hop_edges)

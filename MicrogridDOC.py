@@ -27,14 +27,18 @@ class Microgrid:
         self.C_re = C_re #弃电惩罚
 
 class OptimizationMicrogrid:
-    def __init__(self, model, microgrid, num_microgrid, C_buy, C_sell):
+    def __init__(self, model, microgrid, num_microgrid):
         # 初始化微电网实体、数量、购电和售电价格等参数
         self.microgrid = microgrid
         self.num_microgrid = num_microgrid
-        self.C_buy = C_buy
-        self.C_sell = C_sell
-        self.C_buymic = [price * 0.78 for price in C_buy]  # 购电价格
-        self.C_sellmic = [price * 0.56 for price in C_sell]  # 售电价格
+        self.C_buy = [0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205,
+                      0.5802, 0.5802, 0.9863, 0.9863, 0.5802, 0.5802, 0.9863, 0.9863,
+                      0.9863, 0.9863, 0.9863, 0.5802, 0.5802, 0.5802, 0.5802, 0.5802]
+        self.C_sell = [0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
+                       0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
+                       0.453, 0.453, 0.453, 0.453, 0.453, 0.453]
+        self.C_buymic = [price * 0.78 for price in self.C_buy]  # 购电价格
+        self.C_sellmic = [price * 0.56 for price in self.C_sell]  # 售电价格
         self.model = model #Model(name="Microgrid Optimization")  # 创建 DOcplex 模型
 
     def add_variable(self):
@@ -315,14 +319,16 @@ class OptimizationMicrogrid:
                 curtail_Pwt = self.model.max(0, self.microgrid.P_wt[k] - self.Pwt[k])
                 objective_expr += curtail_Pwt * self.microgrid.C_re  # 风电弃电惩罚
 
-        LL = self.microgrid.load # + Ldr_1 + Lidr_1
+        # LL = self.microgrid.load # + Ldr_1 + Lidr_1
         # Peak-Valley Difference Indicator (峰谷差指标)
-        FGX = np.max(LL) - np.min(LL)
+        # FGX = np.max(LL) - np.min(LL)
         # Deviation Indicator (偏差指标)
-        Fpl = np.sum(np.abs(LL - np.mean(LL)))
+        # Fpl = np.sum(np.abs(LL - np.mean(LL)))
         # Cost of Demand Response (CostDR)
         #CostDR = np.sum(Ldr_1 * 0.025 + Lidr_1 * 0.05)
-        objective_expr += FGX * 20 + Fpl
+        #objective_expr += FGX * 20 + Fpl
+
+
         return objective_expr
 
 

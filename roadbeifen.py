@@ -161,7 +161,8 @@ class Markov:
                     # 高峰期权重计算
                     W_peak[i, j] = self.calculate_weight(peak_saturations[i, j])
                     # 非高峰期权重计算
-                    W_off_peak[i, j] = self.calculate_weight(off_peak_saturations[i, j])
+                    W_off_peak[i, j] = self.calculate_weight(off_peak_saturations[i, j])/2
+                    # W_off_peak[i, j] = self.calculate_weight(off_peak_saturations[i, j])
 
         # 高峰
         for i in range(len(W_peak)):
@@ -213,6 +214,9 @@ class Markov:
 
         # 初始化出发时间分布字典
         self.departure_distributions = {}
+        # 初始化充电需求记录
+        self.charging_requirement = {}
+
 
         # 遍历每个起点和终点，计算它们之间的出发时间分布
         for start in range(num_nodes): # 从任何一个点出发都需要
@@ -220,22 +224,30 @@ class Markov:
                 try:
                     # 使用NetworkX获取起点到终点的最短路径长度（即边的数量）
                     path_length = nx.shortest_path_length(self.G, source=start, target=end, weight=None)
-
                     # 计算转移次数对应的时间增加，这里假设每次转移增加0.05小时
                     transfer_time = path_length * 0.05
                     # 设置mu基于路径上的边数，每条边通过时间增加0.05小时
                     mu = 9 - transfer_time  # 这里的9是示例中的起始时间，根据实际情况调整
                     sigma = 0.5  # 假定标准差为0.5
-                    # # 转换均值和标准差为截断正态分布的参数
-                    # a, b = (lower - mu) / sigma, (upper - mu) / sigma
-                    # # 存储每个起点到终点的出发时间分布
-                    # self.departure_distributions[(start, end)] = truncnorm(a, b, loc=mu, scale=sigma)
                     self.departure_distributions[(start, end)] = norm(loc=mu, scale=sigma)
+                    if start in self.start_mapping:
+                        commuting_consumption = path_length * 2 * 0.195 * 2 #每日消耗 平均195Wh/km 边长两公里
+                        driving_time = 60 * 0.6 / commuting_consumption #天 平均60KWH SOC 0.3-0.9
+                        self.charging_requirement[(start, end)] = 1 / driving_time #平均每天充电 比例
 
                 except nx.NetworkXNoPath:
                     print(f"No path found from {start} to {end}.")
                 except KeyError:
                     print(f"One of the nodes {start} or {end} does not exist.")
+
+        df = pd.DataFrame(list(self.charging_requirement.items()), columns=['Start_End', 'Charging_Requirement'])
+        # Split the Start_End tuple into two columns
+        df[['Start', 'End']] = pd.DataFrame(df['Start_End'].tolist(), index=df.index)
+        # Drop the Start_End column as it is now split into two separate columns
+        df.drop('Start_End', axis=1, inplace=True)
+        # Write the DataFrame to a CSV file
+        df.to_csv('charging_requirement.csv', index=False)
+
 
         # 返程时间分布
         self.back_distributions = {}
@@ -275,18 +287,11 @@ class Markov:
         # 遍历所有可能的起点和终点组合
         for start in range(num_nodes):
             for end in self.end_mapping:
-                # # 检查是否为这对起点和终点定义了正态分布
-                # if (start, end) in self.departure_distributions:
-                # 获取起点到终点的正态分布对象
                 norm_dist = self.departure_distributions[(start, end)]
                 # 计算在时间x的PDF值并存储
-                self.departure_move[(start, end)] = norm_dist.pdf(time)
+                self.departure_move[(start, end)] = norm_dist.pdf(time) * 0.05
                 # 计算在时间x的CDF值，并计算停留概率存储
-                self.departure_static[(start, end)] = 1 - norm_dist.cdf(time)
-                # else:
-                #     # 如果没有为这对节点定义正态分布，PDF记作0，CDF记作1
-                #     self.departure_move[(start, end)] = 0
-                #     self.departure_move[(start, end)] = 1
+                self.departure_static[(start, end)] = norm_dist.cdf(time)
 
 
         for start in self.end_mapping:
@@ -296,28 +301,10 @@ class Markov:
                 #     # 获取起点到终点的正态分布对象
                 norm_dist = self.back_distributions[(start, end)]
                 # 计算在时间x的PDF值并存储
-                self.back_move[(start, end)] = norm_dist.pdf(time)
+                self.back_move[(start, end)] = norm_dist.pdf(time) * 0.05
                 # 计算在时间x的CDF值，并计算停留概率存储
-                self.back_static[(start, end)] = 1 - norm_dist.cdf(time)
-        # 设置NumPy的打印选项，以便打印大型数组时不会省略任何部分
-        np.set_printoptions(threshold=np.inf)
+                self.back_static[(start, end)] = norm_dist.cdf(time)
 
-        # 打开一个文本文件用于写入
-        with open('matrix_output.txt', 'w') as f:
-            # 打印第一个矩阵
-            print("\ndeparture_move:", file=f)
-            print(self.departure_move, file=f)
-
-            # 打印第二个矩阵
-            print("\ndeparture_static:", file=f)
-            print(self.departure_static, file=f)
-
-            print("\nback_move:", file=f)
-            print(self.back_move, file=f)
-
-            # 打印第二个矩阵
-            print("\nback_static:", file=f)
-            print(self.back_static, file=f)
     def departure_probability(self, end):
         # 初始化矩阵
         self.TM_departure_start = np.zeros((num_nodes, num_nodes))
@@ -404,6 +391,9 @@ class Markov:
         # 出发的车流量矩阵 P TO M
         self.edge_start_matrix = np.zeros((num_nodes, num_nodes))
 
+        departure_static_matrix = np.zeros(num_nodes)
+        back_static_matrix = np.zeros(num_nodes)
+
         # 上班的车队
         for end in self.end_mapping:
             self.departure_probability(end)  # 更新self.TM_departure
@@ -411,26 +401,45 @@ class Markov:
             for i in range(num_nodes):
                 for j in range(num_nodes):
                     if self.G.has_edge(i, j):
-                        self.edge_stop_matrix[i, j] += self.TM_departure_stop[i, j] * self.departure_move[(i, end)]
-                        # 更新出发状态的车流量 P TO M
-                        self.edge_start_matrix[i, j] += self.TM_departure_start[i, j] * self.departure_move[(i, end)]
                         self.edge_move_matrix[i, j] += self.TM_departure_move[i, j] * self.departure_move[(i, end)]
-            for i in self.start_mapping:
-                # 更新静止状态的车流量
-                self.edge_static_matrix[i] += 1 * self.departure_static[(i, end)]  # 不出发的车
+                        if i in self.start_mapping:
+                            # 更新出发状态的车流量 P TO M
+                            self.edge_start_matrix[i, j] += self.TM_departure_start[i, j] * self.departure_move[
+                                (i, end)]
+                        if j in self.end_mapping:
+                            # 更新到达状态的车流量 M TO P
+                            self.edge_stop_matrix[i, j] += self.TM_departure_stop[i, j] * self.departure_move[(i, end)]
+                if i == end:
+                    departure_static_matrix[i] += len(self.start_mapping) * self.departure_static[(i, end)] # 终点ds - bs
+                elif i in self.start_mapping:
+                    # 更新静止状态的车流量
+                    departure_static_matrix[i] += 1 - self.departure_static[(i, end)]  # 起点1-ds+bs
         # 下班的车队
         for start in self.end_mapping:
             self.back_probability(start)  # 更新self.TM_back
             for i in range(num_nodes):
-                self.edge_static_matrix[i] += self.back_static[(start, i)]
                 for j in range(num_nodes):
                     if self.G.has_edge(i, j):
-                        self.edge_stop_matrix[i, j] += self.TM_back_stop[i, j] * self.back_move[(start, i)]
-                        self.edge_start_matrix[i, j] += self.TM_back_start[i, j] * self.back_move[(start, i)]
                         self.edge_move_matrix[i, j] += self.TM_back_move[i, j] * self.back_move[(start, i)]
-            for i in self.end_mapping:
-                # 更新静止状态的车流量
-                self.edge_static_matrix[i] += 1 * self.back_static[(start, i)]  # 不出发的车
+                        if j in self.start_mapping: # 更新到达状态的车流量 M TO P
+                            self.edge_stop_matrix[i, j] += self.TM_back_stop[i, j] * self.back_move[(start, i)]
+                        if i in self.end_mapping: # 更新出发状态的车流量 P TO M
+                            self.edge_start_matrix[i, j] += self.TM_back_start[i, j] * self.back_move[(start, i)]
+
+                if i == start:
+                    # 更新静止状态的车流量
+                    back_static_matrix[i] += len(self.start_mapping) * self.back_static[(start, i)]  # # 计算每个点的back static
+                elif i in self.start_mapping:
+                    back_static_matrix[i] += 1 * self.back_static[(start, i)]
+        # 每个点静止的车 对于起点 ds-bs 终点 1-ds+bs
+        for i in self.end_mapping:
+            # 更新静止状态的车流量
+            self.edge_static_matrix[i] += departure_static_matrix[i] - back_static_matrix[i] # 终点ds - bs
+        for i in self.start_mapping:
+            # 更新静止状态的车流量
+            self.edge_static_matrix[i] += departure_static_matrix[i] + back_static_matrix[i] # 起点1-ds+bs
+
+
     def generate_TM(self, time):#所有的P状态在矩阵的前半部分，所有的M状态在后半部分
         # 初始化扩展转移矩阵
         self.TM = np.zeros((2 * num_nodes, 2 * num_nodes))

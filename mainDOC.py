@@ -324,17 +324,17 @@ def MGO(C_buy, C_sell):
 
     # #===============画图=================
 
-    #打印结果
-    total_optimization_manager.print_optimization_results(solution)
-
-    # 创建可视化实例
-    visualization = Visualization(total_optimization_manager, [grid1, grid2, grid3], num_microgrid, total_optimization_manager.model)
-    visualization.extract_solution_to_dict()  # 提取解决方案
-
-    # 对每个微电网绘制图表
-    for microgrid_id in range(num_microgrid):
-        visualization.plot_microgrid_charts(microgrid_id)
+    # #打印结果
+    # total_optimization_manager.print_optimization_results(solution)
     #
+    # # 创建可视化实例
+    # visualization = Visualization(total_optimization_manager, [grid1, grid2, grid3], num_microgrid, total_optimization_manager.model)
+    # visualization.extract_solution_to_dict()  # 提取解决方案
+    #
+    # # 对每个微电网绘制图表
+    # for microgrid_id in range(num_microgrid):
+    #     visualization.plot_microgrid_charts(microgrid_id)
+    # #
     return Fdown, Pgrid_out, Pgrid_in
 
 
