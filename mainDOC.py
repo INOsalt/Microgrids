@@ -16,7 +16,7 @@ class TotalOptimizationManager:
     def setup(self):
         objective_all = 0
         for i in range(len(self.microgrids)):
-            optimization = OptimizationMicrogrid(self.model, self.microgrids[i], self.num_microgrid, self.C_buy, self.C_sell)
+            optimization = OptimizationMicrogrid(self.model, self.microgrids[i], self.num_microgrid)
             optimization.add_variable()
             optimization.add_constraints()
             objective_all += optimization.add_objective()  # 累加目标函数表达式
@@ -245,7 +245,7 @@ class Visualization:
         plt.show()
 
 
-def MGO(C_buy, C_sell):
+def MGO(C_buy, C_sell, EVload):
     C_re = 0.1
     #======grid1========#
     id1 = 0
@@ -317,7 +317,7 @@ def MGO(C_buy, C_sell):
     solution = total_optimization_manager.solve()
 
     # 计算主电网交易量
-    Pgrid_out, Pgrid_in = total_optimization_manager.calculate_grid_power_flows()
+    #Pgrid_out, Pgrid_in = total_optimization_manager.calculate_grid_power_flows()
 
     # 获取目标函数的值
     Fdown = total_optimization_manager.calculate_objective(C_re)
@@ -335,7 +335,7 @@ def MGO(C_buy, C_sell):
     # for microgrid_id in range(num_microgrid):
     #     visualization.plot_microgrid_charts(microgrid_id)
     # #
-    return Fdown, Pgrid_out, Pgrid_in
+    return Fdown
 
 
 
@@ -347,8 +347,8 @@ C_buy = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
 
 C_sell = [0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.42, 0.42, 0.42, 0.65, 0.65,
          0.65, 0.65, 0.65, 0.42, 0.42, 0.42, 0.65, 0.65, 0.65, 0.42, 0.42, 0.42]
-Fdown, Pgrid_out, Pgrid_in = MGO(C_buy, C_sell)
-print(Fdown, Pgrid_out, Pgrid_in)
+Fdown = MGO(C_buy, C_sell)
+print(Fdown)
 
 # #全局
 # C_buy = [0.38, 0.38, 0.38, 0.38, 0.38, 0.38, 0.82, 0.82, 0.82, 1.35, 1.35, 1.35, 1.35, 1.35, 0.82, 0.82, 0.82, 1.35, 1.35, 1.35, 1.35, 1.35, 0.38, 0.38]

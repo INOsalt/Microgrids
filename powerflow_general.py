@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+from gridinfo import nodedata_dict
 """
 Branch_data阻抗矩阵
 Nodedata负荷矩阵, 
@@ -10,7 +12,31 @@ SB = 10  # 功率基准 MVA
 Pev 电动汽车负荷
 """
 
-def powerflow(Branch_data, Nodedata, zhilu, num_nodes, num_branches, UB, SB, Pev):
+# 全局变量
+# 支路矩阵
+# Branch_data=[文件应包含以下列：'From bus', 'To bus', 'Resistance (Ω)', 'Reactance (Ω)']
+branch_data_df = pd.read_csv('grid/Branch_data.csv')
+branch_data = branch_data_df[['From bus', 'To bus', 'Resistance', 'Reactance']].to_numpy()
+
+num_nodes = 40    # 节点数量
+num_branches = 49 # 支路数量
+Pev_example = 10          # 额外负荷
+S = [33, 34, 35, 36, 37]  #pcc
+zhilu = np.ones(37)
+for k in range(37):
+    if k + 1 in S:
+        zhilu[k] = 0
+UB = 11  # 电压基准 kV
+SB = 10  # 功率基准 MVA
+
+def powerflow(Pev):
+    for i in 24:
+        Pev_i = Pev[i]
+        powerflow(i,Pev_i)
+
+
+
+def powerflow(i, Pev_i):
     format_long = np.set_printoptions(precision=15)  # 设置高精度打印
     # 动态初始化数组和变量
     Y = np.zeros((num_nodes, num_nodes), dtype=complex)
@@ -18,6 +44,9 @@ def powerflow(Branch_data, Nodedata, zhilu, num_nodes, num_branches, UB, SB, Pev
     # 初始化电压相角 delt 和电压幅值 u
     delt = np.zeros(num_nodes)
     u = np.ones(num_nodes)
+    # 第i小时的数据
+    Nodedata = nodedata_dict[i]
+    Branch_data = branch_data
 
     # 更新节点基础负荷功率
     Nodedata[:, 1] += Pev
@@ -149,95 +178,7 @@ def powerflow(Branch_data, Nodedata, zhilu, num_nodes, num_branches, UB, SB, Pev
 
 
 
-# 示例调用
-# Branch_data=[Branch_data(:,1)代表支路起始节点1编号，Branch_data(:,2)代表支路末节点2编号，Branch_data(:,[3,4])代表阻抗  ]
-Branch_data = np.array([
-    [0, 1, 0.0922, 0.0470],
-    [1, 2, 0.4930, 0.2511],
-    [2, 3, 0.3660, 0.1864],
-    [3, 4, 0.3811, 0.1941],
-    [4, 5, 0.8190, 0.7070],
-    [5, 6, 0.1872, 0.6188],
-    [6, 7, 0.7114, 0.2351],
-    [7, 8, 1.0300, 0.7400],
-    [8, 9, 1.0440, 0.7400],
-    [9, 10, 0.1966, 0.0650],
-    [10, 11, 0.3744, 0.1238],
-    [11, 12, 1.4680, 1.1550],
-    [12, 13, 0.5416, 0.7129],
-    [13, 14, 0.5910, 0.5260],
-    [14, 15, 0.7463, 0.5450],
-    [15, 16, 1.2890, 1.7210],
-    [16, 17, 0.7320, 0.5740],
-    [1, 18, 0.1640, 0.1565],
-    [18, 19, 1.5042, 1.3554],
-    [19, 20, 0.4095, 0.4784],
-    [20, 21, 0.7089, 0.9373],
-    [2, 22, 0.4512, 0.3083],
-    [22, 23, 0.8980, 0.7091],
-    [23, 24, 0.8960, 0.7011],
-    [5, 25, 0.2030, 0.1034],
-    [25, 26, 0.2842, 0.1447],
-    [26, 27, 1.0590, 0.9337],
-    [27, 28, 0.8042, 0.7006],
-    [28, 29, 0.5075, 0.2585],
-    [29, 30, 0.9744, 0.9630],
-    [30, 31, 0.3105, 0.3619],
-    [31, 32, 0.3410, 0.5302],
-    [7, 20, 2, 2],
-    [8, 14, 2, 2],
-    [11, 21, 2, 2],
-    [17, 32, 0.5, 0.5],
-    [24, 28, 0.5, 0.5]
-])
 
-# 节点负荷矩阵，共32个节点+1个大地节点（零参考节点）=33个节点
-# %Nodedata=[Nodedata(:,1)代表节点编号，Nodedata(:,[2,3])代表节点基础负荷功率 ]
-Nodedata = np.array([
-    [0, 0, 0],
-    [1, 100.00, 60.00],
-    [2, 90.00, 40.00],
-    [3, 120.00, 80.00],
-    [4, 60.00, 30.00],
-    [5, 60.00, 20.00],
-    [6, 200.00, 100.00],
-    [7, 200.00, 100.00],
-    [8, 60.00, 20.00],
-    [9, 60.00, 20.00],
-    [10, 45.00, 30.00],
-    [11, 60.00, 35.00],
-    [12, 60.00, 35.00],
-    [13, 120.00, 80.00],
-    [14, 60.00, 10.00],
-    [15, 60.00, 20.00],
-    [16, 60.00, 20.00],
-    [17, 90.00, 40.00],
-    [18, 90.00, 40.00],
-    [19, 90.00, 40.00],
-    [20, 90.00, 40.00],
-    [21, 90.00, 40.00],
-    [22, 90.00, 50.00],
-    [23, 420.00, 200.00],
-    [24, 420.00, 200.00],
-    [25, 60.00, 25.00],
-    [26, 60.00, 25.00],
-    [27, 60.00, 20.00],
-    [28, 120.00, 70.00],
-    [29, 200.00, 600.00],
-    [30, 150.00, 70.00],
-    [31, 210.00, 100.00],
-    [32, 60.00, 40.00]
-])
-num_nodes = 33    # 节点数量
-num_branches = 37 # 支路数量
-Pev_example = 10          # 额外负荷
-S = [33, 34, 35, 36, 37]  #pcc
-zhilu = np.ones(37)
-for k in range(37):
-    if k + 1 in S:
-        zhilu[k] = 0
-UB = 12.66 * 1.5  # 电压基准 kV
-SB = 10  # 功率基准 MVA
 Pev = 10
-uresult, deltresult, node = powerflow(Branch_data, Nodedata, zhilu, num_nodes, num_branches, UB, SB, Pev)
+#uresult, deltresult, node = powerflow(Branch_data, Nodedata, zhilu, num_nodes, num_branches, UB, SB, Pev)
 print(uresult, deltresult, node)

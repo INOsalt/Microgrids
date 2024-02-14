@@ -26,13 +26,13 @@ def read_and_multiply_matrices(input_dir, output_dir, step=10):
         if len(matrices) == step:
             result_matrix = np.linalg.multi_dot(matrices)
             # 保存结果矩阵到CSV
-            result_path = os.path.join(output_dir, f"TMhalfhour_{i // step}.csv")
+            result_path = os.path.join(output_dir, f"TMhalfhour_{i // step:02}.csv")
             pd.DataFrame(result_matrix).to_csv(result_path, header=None, index=False)
         else:
             print(f"Skipping batch starting at {i} due to insufficient matrices.")
 
 
-# 示例用法
+#示例用法
 # input_dir = 'TM'  # 这是包含每三分钟转移矩阵CSV文件的目录路径
 # output_dir = 'TMhalfhour'  # 这是结果将被保存的目录路径
 # read_and_multiply_matrices(input_dir, output_dir)
@@ -70,13 +70,15 @@ def calculate_state_vectors(initial_state, tm_folder, output_file):
 
 
 # 示例用法
-initial_state = [0., 0., 0., 0., 0., 0., 0., 1000., 1000., 1000., 1000., 1000.,
-                 0., 1000., 1000., 0., 0., 1000., 1000., 1000., 1000., 1000., 1000., 1000.,
-                 0., 0., 0., 1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000.,
-                 1000., 1000., 1000., 1000., 0., 0., 0., 0., 0., 0., 0., 0.,
-                 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-                 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-                 0., 0., 0., 0., 0., 0., 0., 0.]
+initial_state = [0., 0., 0., 0., 0., 0., 0., 1000., 1000., 1000.,
+                 1000., 1000., 0., 1000., 1000., 0., 1000., 1000., 1000., 1000.,
+                 1000., 1000., 1000., 1000., 1000., 0., 0., 1000., 1000., 1000.,
+                 1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000.,
+                 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+                 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+                 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+                 0., 0., 0., 0., 0., 0., 0., 0., 0.,  0.]
+
 tm_folder = 'TMhalfhour'
 output_file = 'SVhalfhour.csv'
 

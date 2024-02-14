@@ -248,10 +248,10 @@ class Markov:
             if start in self.start_mapping:
                 # 将每个起点的充电频率平均值存储到 charging_frequency 数组中
                 self.charging_frequency[start] = total_charging_frequency / len(self.end_mapping)
-        np.set_printoptions(threshold=np.inf)
-        print(len(self.charging_frequency))
-        output_file_path = "charging_frequency_output.txt"
-        np.savetxt(output_file_path, self.charging_frequency)
+        # np.set_printoptions(threshold=np.inf)
+        # print(len(self.charging_frequency))
+        # output_file_path = "charging_frequency_output.txt"
+        # np.savetxt(output_file_path, self.charging_frequency)
 
 
         # 返程时间分布
@@ -491,33 +491,10 @@ class Markov:
         for time in np.arange(0, 24.05, 0.05):
             TM = self.generate_TM(time)  # 生成转移矩阵
             self.transition_matrices[time] = TM
-        # # 计算每30分钟的转移矩阵并保存
-        # self.calculate_and_save_half_hour_TMs()
-
-    def calculate_and_save_half_hour_TMs(self):
-        times = sorted(self.transition_matrices.keys())
-        half_hour_steps = 10  # 每半小时的步数
-        half_hour_matrices = []
-
-        # 检查目录是否存在，如果不存在则创建
-        output_dir = "TMhalfhour"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        for i in range(0, len(times), half_hour_steps):
-            # 获取当前半小时段内的转移矩阵
-            current_matrices = [self.transition_matrices[time] for time in times[i:i + half_hour_steps]]
-            # 计算这些矩阵的乘积
-            half_hour_matrix = np.linalg.multi_dot(current_matrices)
-            half_hour_matrices.append(half_hour_matrix)
-            # 保存到文件
-            np.savetxt(f"{output_dir}/TM_{i // half_hour_steps}.txt", half_hour_matrix)
-
-        return half_hour_matrices
 
             # 更新当前状态向量
-            #current_state = np.dot(current_state, TM)
-            #state_vectors[time] = current_state
+            current_state = np.dot(current_state, TM)
+            state_vectors[time] = current_state
 
             # # 稳态分布的计算方法以适应扩展状态空间
             # A = TM - np.eye(2 * num_nodes)
@@ -530,24 +507,24 @@ class Markov:
             #     self.steady_states[time] = steady_state
             # except np.linalg.LinAlgError:
             #     print(f"Cannot compute steady state for time {time} due to numerical issues.")
-"""
+
             # 构造保存转移矩阵的文件名
-            output_dir = "TM"
+            output_dir1 = "TM"
             hour = int(time)
             minute = int((time % 1) * 60)
             filename = f"transition_matrix_{hour:02d}_{minute:02d}.csv"
-            filepath = os.path.join(output_dir, filename)  # 将文件名和目标文件夹合并为完整路径
+            filepath = os.path.join(output_dir1, filename)  # 将文件名和目标文件夹合并为完整路径
 
             # 保存转移矩阵到CSV文件
             pd.DataFrame(TM).to_csv(filepath, index=False)
         
-        # # 构造保存稳态的文件名
-        # # 键（时间）成为DataFrame的索引，每个稳态分布数组成为一行
-        # steady_states_df = pd.DataFrame.from_dict(self.steady_states, orient='index')
-        # # 给列命名
-        # steady_states_df.columns = [f"State_{i}" for i in range(steady_states_df.shape[1])]
-        # # 将DataFrame保存到CSV文件
-        # steady_states_df.to_csv(path_or_buf="SS.csv", index_label="Time")
+        # 构造保存稳态的文件名
+        # 键（时间）成为DataFrame的索引，每个稳态分布数组成为一行
+        steady_states_df = pd.DataFrame.from_dict(self.steady_states, orient='index')
+        # 给列命名
+        steady_states_df.columns = [f"State_{i}" for i in range(steady_states_df.shape[1])]
+        # 将DataFrame保存到CSV文件
+        steady_states_df.to_csv(path_or_buf="SS.csv", index_label="Time")
 
         # 将状态向量保存到DataFrame中
         df_state_vectors = pd.DataFrame.from_dict(state_vectors, orient='index')
@@ -560,7 +537,7 @@ class Markov:
         # 在函数结束时，返回状态向量记录
         return state_vectors
 
-"""
+
 # def visualize_graph(G, title="Graph Visualization"):#检查权重
 #     plt.figure(figsize=(12, 8))  # 设置画布大小
 #     pos = nx.spring_layout(G, seed=42)  # 为图G生成布局
@@ -578,7 +555,7 @@ class Markov:
 #     plt.show()
 
 
-start_points = [202, 203, 204, 205, 206, 208, 209, 303, 304, 305, 306, 307, 308, 309, 313, 314, 315, 316, 317,
+start_points = [202, 203, 204, 205, 206, 208, 209, 302, 303, 304, 305, 306, 307, 308, 309, 310, 313, 314, 315, 316, 317,
                 318, 401, 402, 403, 404, 405, 406, 407]
 end_points = [101, 102, 103, 104, 105, 106]
 
@@ -591,7 +568,7 @@ for start in starts:
 np.set_printoptions(threshold=np.inf)
 print(initial_state)
 
-#markov = Markov(G, labels, start_points, end_points)
+markov = Markov(G, labels, start_points, end_points)
 # markov.update_graph_weights(8)
 # markov.normal_distribution()
 # markov.time_possibility(8)

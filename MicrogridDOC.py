@@ -3,7 +3,8 @@ import numpy as np
 
 
 class Microgrid:
-    def __init__(self, id, load, POWER, POWER_MIC, ebattery, socmin, socmax, soc0, pcs, P_pv=None, P_wt=None, C_mt=None, C_de=None, C_re=None):
+    def __init__(self, id, load, POWER, POWER_MIC, ebattery, socmin, socmax, soc0, pcs,
+                 P_pv=None, P_wt=None, C_mt=None, C_de=None, C_re=None):
         #ID标识
         self.id = id
         # 负载 (Load)

@@ -1,7 +1,9 @@
-from docplex.mp.model import Model
+from pyomo.environ import *
 import pandas as pd
 import os
 import numpy as np
+#import pyomo.environ as pyo
+
 
 # 初始化
 EV_penetration = 1000 #辆/每节点
@@ -10,12 +12,12 @@ power_6_to_39 = 7  # kW 慢充
 
 # 读取矩阵
 # 设置包含CSV文件的文件夹路径
-folder_path = 'TM'  # 你需要替换为实际的路径
+folder_path = 'TMhalfhour'  # 你需要替换为实际的路径
 
 # 初始化一个空字典来存储矩阵
 transition_matrices = {}
 # 生成步长为0.05的序列从0到24
-keys = np.arange(0, 24.05, 0.05)
+keys = np.arange(0, 24, 0.5)
 
 # 遍历文件夹中的所有文件
 i = 0
@@ -75,163 +77,87 @@ spaced_connection = {(2, 1), (2, 5), (10, 3), (26, 25), (12, 2), (7, 6), (12, 6)
                      (26, 5), (28, 25), (2, 4)}
 
 def EV_load(price_1, price_2, price_3, price_4):
-    # 初始化模型
-    mdl = Model('EV_Charging')
-
+    # 初始化Pyomo模型
+    model = ConcreteModel()
+    to_points = [7.5, 8, 8.5, 9, 9.5, 10, 10.5]  # 表示时间点的集合 7以前和初始保持一致
     # 定义每个时刻每个节点的充电汽车数变量
-    charging_cars = {(i, t): mdl.integer_var(name=f'charging_cars_{i}_{t}')
-                     for i in range(40) for t in np.arange(0, 24.05, 0.05)}
-    # 定义与spaced_connection数量相同的变量，变量范围是0到1
-    transition_vars = {pair: mdl.continuous_var(lb=0, ub=1, name=f'transition_var_{pair[0]}_{pair[1]}')
-                       for pair in spaced_connection}
+    # 定义变量
+    model.charging_cars = Var(range(num_nodes), to_points, within=NonNegativeReals)
+    # 定义辅助变量
+    # 定义索引集合
+    index_set = []
+    for time in to_points:
+        for (i, j) in spaced_connection:
+            index_set.append((time, i, j))
+    # 定义辅助变量，限定在0到1之间
+    model.aux_vars = Var(index_set, within=NonNegativeReals, bounds=(0, 1))
 
+    # 定义时间点和索引
+    model.T = RangeSet(len(to_points))  # 时间点的索引
+    model.I = RangeSet(80)  # 状态向量和矩阵的维度
 
-    for time, matrix in transition_matrices.items():
-        for (i, j), var in transition_vars.items():
-            sum_parking = matrix[j + 40, 0:40].sum()
-            matrix[i + 40, j] += var * sum_parking * matrix[i + 40, j + 40]  # 更新[i+40, j]位置
-            matrix[i + 40, j + 40] *= (1 - var * sum_parking)  # 更新[i+40, j+40]位置
-            # 对 [j+40, 41] 到 [j+40, 80] 的元素执行除法操作 # 注意：索引应该是 40:80，因为Python的范围是左闭右开
-            decrease_sum = 0  # 用于记录减少的总量
-            for col in range(40, 80):  # 从第41列到第80列
-                original_value = matrix[j + 40, col]
-                new_value = original_value / (var * sum_parking)
-                decrease_sum += original_value - new_value  # 累加减少的量
-                matrix[j + 40, col] = new_value  # 更新元素值
-            average_decrease = decrease_sum / 40  # 平均分配给前40列
-            for col in range(0, 40):  # 更新前40列
-                matrix[j + 40, col] += average_decrease
+    # 假设 initial_state 和 transition_matrices 已经定义
+    model.currentState = Var(model.I, model.T, within=NonNegativeReals)
 
-    # 找出所有满足条件的(i, j, l)组合 三个点都相连
-    valid_combinations = set()
-    for (i, j) in direct_connection:
-        for l in [l for (x, l) in direct_connection if x == i]:
-            if (j, l) in direct_connection or (l, j) in direct_connection:
-                valid_combinations.add((i, j, l))
-    # 为找到的组合创建变量
-    combination_vars = {comb: mdl.continuous_var(lb=0, ub=1, name=f"var_{comb[0]}_{comb[1]}_{comb[2]}")
-                        for comb in valid_combinations}
-    # 更新矩阵
-    for time, matrix in transition_matrices.items():
-        for (i, j, l), var in combination_vars.items():
-            var = var.solution_value  # 获取决策变量的解值
-            matrix[i + 40, j] += var * matrix[i + 40, j + 40]  # 更新[i+40,j]
-            matrix[i + 40, j] *= (1 - var)  # 更新[i+40,j]
-            matrix[i + 40, l] += matrix[i + 40, j] * var  # 更新[i+40,l]
-
-    # 首先，基于direct_connection创建一个映射，记录每个j节点所有的目标节点k
-    j_to_k_map = {}
-    for (j, k) in direct_connection:
-        if j not in j_to_k_map:
-            j_to_k_map[j] = [k]
+    def update_rule(model, i, t):
+        if t == 1:  # 假设t=1对应于to_points中的第一个时间点
+            # 初始状态更新规则
+            return model.currentState[i, t] == sum(
+                initial_EV[j] * transition_matrices[to_points[0]][j, i] for j in model.I)
         else:
-            j_to_k_map[j].append(k)
+            # 后续状态更新规则，基于前一个时间点的状态
+            return model.currentState[i, t] == sum(
+                model.currentState[j, t - 1] * transition_matrices[to_points[t - 1]][j, i] for j in model.I)
 
-    aux_vars = {}  # 存储辅助变量的字典
-    aux1_vars = {}
-    for time in keys:
-        # 确保每个时间点的键在aux1_vars中已经初始化
-        if time not in aux1_vars:
-            aux1_vars[time] = {}  # 初始化一个空字典用于存储该时间点的变量
+    model.UpdateConstraint = Constraint(model.I, model.T, rule=update_rule)
 
-    # 创建辅助变量
-    for time in keys:
-        aux_vars[time] = {}
-        for (i, j) in spaced_connection:
-            # 定义动态元素的辅助变量
-            if (i + 40, j) not in aux_vars[time]:
-                aux_vars[time][(i + 40, j)] = mdl.continuous_var(name=f"aux_{time}_{i + 40}_{j}")
-            if (i + 40, j + 40) not in aux_vars[time]:
-                aux_vars[time][(i + 40, j + 40)] = mdl.continuous_var(name=f"aux_{time}_{i + 40}_{j + 40}")
+    # 计算每个时间点的最大充电车辆数
+    def compute_max_EV_at_time(model, time):
+        current_EV = initial_EV
+        for t in to_points:
+            if t > time:
+                break
+            # 获取当前时间点的转移矩阵，并根据aux_vars更新
+            matrix = transition_matrices[t]
+            for i, j in spaced_connection:
+                matrix[i + 40, j + 40] = matrix[i + 40, j + 40] * model.aux_vars[t, i, j]
+                matrix[i + 40, j] = matrix[i + 40, j + 40] * (1 - model.aux_vars[t, i, j])
+            # 更新current_EV
+            current_EV = np.dot(current_EV, matrix)[:num_nodes]
+        return current_EV
 
-        # 根据j_to_k_map为direct_connection中的每个(j, k)创建辅助变量
-        for j, ks in j_to_k_map.items():
-            for k in ks:
-                aux1_vars[time][(j + 40, k)] = mdl.continuous_var(name=f"aux1_{time}_{j + 40}_{k}")
-                aux1_vars[time][(j + 40, k + 40)] = mdl.continuous_var(name=f"aux1_{time}_{j + 40}_{k + 40}")
+    # 加入充电车数量约束
+    def charging_cars_constraint(model, node, time):
+        max_EV = compute_max_EV_at_time(model, time)
+        return sum(model.charging_cars[node, t] for t in to_points if t <= time) <= max_EV[node]
 
-    for time, matrix in transition_matrices.items():# time不用额外定义， 这里是表示车可以提前停下
-        for (i, j) in spaced_connection:
-            # 确定辅助变量与静态矩阵元素之间的关系
-            # 1. aux_vars[time][(i+40, j+40)] <= matrix[i+40, j+40]
-            mdl.add_constraint(aux_vars[time][(i + 40, j + 40)] <= matrix[i + 40, j + 40])
-            # 2. aux_vars[time][(i+40, j+40)] >= 0
-            mdl.add_constraint(aux_vars[time][(i + 40, j + 40)] >= 0)
-            # 3. aux_vars[time][(i+40, j+40)] + aux_vars[time][(i+40, j)] == matrix[i+40, j+40] + matrix[i+40, j]
-            mdl.add_constraint(
-                aux_vars[time][(i + 40, j + 40)] + aux_vars[time][(i + 40, j)] == matrix[i + 40, j + 40] + matrix[
-                    i + 40, j])
-            # 计算 matrix[j+40, 1] 到 matrix[j+40, 40] 的和
-            sum_elements = sum(matrix[j + 40, k] for k in range(40))
-            # 添加辅助变量的约束 # aux_vars[time][(i+40, j)] >= matrix[i+40, j]
-            mdl.add_constraint(aux_vars[time][(i + 40, j)] >= matrix[i + 40, j])
-            # aux_vars[time][(i+40, j)] <= sum_elements
-            mdl.add_constraint(aux_vars[time][(i + 40, j)] <= sum_elements)
+    # 应用约束
+    model.charging_cars_constraint = Constraint([(node, time) for node in range(num_nodes) for time in to_points],
+                                                rule=charging_cars_constraint)
 
-        for j, ks in j_to_k_map.items():
-            # 对于每个j及其所有的k，我们需要基于aux_vars[time][(i + 40, j)]计算adjustment
-            # 注意：这里我们需要一个逻辑来确定每个j对应的i值，这可能依赖于您的具体业务逻辑
-            if (i + 40, j) in aux_vars[time]:  # 确保(i + 40, j)存在于aux_vars中
-                num_ks = len(ks)  # j直接连接到的节点总数
-                adjustment = (aux_vars[time][(i + 40, j)] - matrix[i + 40, j]) / num_ks
-                for k in ks:
-                    # 更新辅助变量的约束
-                    aux_vars[time][(j + 40, k)] = mdl.continuous_var(name=f"aux_{time}_{j + 40}_{k}")
-                    mdl.add_constraint(aux_vars[time][(j + 40, k)] == matrix[j + 40, k] - adjustment)
-                    mdl.add_constraint(aux_vars[time][(j + 40, k + 40)] == matrix[j + 40, k + 40] + adjustment)
+    # 计算每个时间点的最大充电车辆数
+    def compute_max_EV_at_time(model, time):
+        current_EV = initial_EV
+        for t in to_points:
+            if t > time:
+                break
+            # 获取当前时间点的转移矩阵，并根据aux_vars更新
+            matrix = transition_matrices[t]
+            for i, j in spaced_connection:
+                matrix[i + 40, j + 40] = matrix[i + 40, j + 40] * model.aux_vars[t, i, j]
+                matrix[i + 40, j] = matrix[i + 40, j + 40] * (1 - model.aux_vars[t, i, j])
+            # 更新current_EV
+            current_EV = np.dot(current_EV, matrix)[:num_nodes]
+        return current_EV
 
+    # 加入充电车数量约束
+    def charging_cars_constraint(model, node, time):
+        max_EV = compute_max_EV_at_time(model, time)
+        return sum(model.charging_cars[node, t] for t in to_points if t <= time) <= max_EV[node]
 
-    # 初始化每个时间点的辅助矩阵
-    aux_matrices = {time: [[None for _ in range(80)] for _ in range(80)] for time in keys}
-
-    for time, matrix in transition_matrices.items():
-        # 复制静态矩阵的值到辅助矩阵
-        for i in range(80):
-            for j in range(80):
-                if (i, j) not in aux_vars[time]:
-                    aux_matrices[time][i][j] = matrix[i, j]
-
-        # 为spaced_connection中的(i, j)放置辅助变量
-        for (i, j) in spaced_connection:
-            aux_matrices[time][i + 40][j] = aux_vars[time][(i + 40, j)]
-            aux_matrices[time][i + 40][j + 40] = aux_vars[time][(i + 40, j + 40)]
-
-        # 为j_to_k_map中的(j, k)放置辅助变量
-        for j, ks in j_to_k_map.items():
-            for k in ks:
-                aux_matrices[time][j + 40][k] = aux1_vars[time][(j + 40, k)]
-                if (j + 40, k + 40) in aux1_vars[time]:  # 检查是否存在此辅助变量
-                    aux_matrices[time][j + 40][k + 40] = aux1_vars[time][(j + 40, k + 40)]
-
-    # 对于每个时间点和节点，充电车数量不超过最大车辆数
-    X = initial_EV.copy()  # 复制初始状态以避免修改原始数据
-    for time in keys:
-        updated_X = np.dot(X, aux_matrices[time])  # 使用矩阵乘法更新X
-        for i in range(40):
-            current_val = updated_X[i]  # 获取更新后的单个节点状态
-            mdl.add_constraint(charging_cars[i, time] <= current_val, f'max_cars_constraint_{i}_{time}')
-        X = updated_X  # 更新X以用于下一个时间步的计算
-
-    # 充电功率约束
-    Y = charging_requirement.copy()
-    for time in keys:
-        updated_Y = np.dot(Y, aux_matrices[time])
-        for i in range(40):
-            power = power_0_to_5 if i in range(6) else power_6_to_39
-            current_val = updated_Y[i]
-            mdl.add_constraint(charging_cars[i, time] * power <= current_val, f'max_power_constraint_{i}_{time}')
-        Y = updated_Y  # 更新X以用于下一个时间步的计算
-
-    total_charging_demand = np.sum(charging_requirement)
-
-    # 所有充电负荷的和小于充电需求的和
-    mdl.add_constraint(
-        mdl.sum(
-            charging_cars[i, t] * (power_0_to_5 if i < 6 else power_6_to_39)
-            for i in range(40) for t in keys  # 确保这里的t与时间点索引一致
-        ) == total_charging_demand,
-        "total_charging_demand_constraint"
-    )
+    # 应用约束
+    model.charging_cars_constraint = Constraint([(node, time) for node in range(num_nodes) for time in to_points],
+                                                rule=charging_cars_constraint)
 
     # 生成每个i的价格
     price_mapping = {}
@@ -245,19 +171,35 @@ def EV_load(price_1, price_2, price_3, price_4):
         elif 401 <= node <= 407:
             price_mapping[i] = price_4
 
-    # 定义目标函数：最小化总充电成本
-    total_cost = mdl.sum(charging_cars[i, t] * price_mapping[i] for i in range(40) for t in keys)
-    mdl.minimize(total_cost)
+    total_charging_demand = np.sum(charging_requirement)
 
-    # 求解模型
-    solution = mdl.solve()
+    # 添加约束：所有充电负荷的和小于等于充电需求的总和
+    def total_demand_constraint(model):
+        return summation(
+            [model.charging_cars[i, t] * (power_0_to_5 if i < 6 else power_6_to_39) for i in model.I for t in
+             model.T]) <= total_charging_demand
+
+    model.total_demand_constr = Constraint(rule=total_demand_constraint)
+
+    def objective_rule(model):
+        return sum(model.charging_cars[i, t] * price_mapping[i] for i in model.I for t in model.T)
+
+    model.objective = Objective(rule=objective_rule, sense=minimize)
+
+    # 使用求解器求解模型
+    solver = SolverFactory('ipopt')  # 这里使用Ipopt作为求解器，确保已安装
+    solution = solver.solve(model)
 
     # 检查解决方案是否存在
-    if solution:
+    if solution.solver.status == SolverStatus.ok and solution.solver.termination_condition == TerminationCondition.optimal:
         # 打印或处理解决方案
         print("Solution found")
+        # 打印变量的解
+        for i in model.I:
+            for t in model.T:
+                print(f"Charging cars at node {i} at time {t}: {value(model.charging_cars[i, t])}")
     else:
-        print("No solution found")
+        print("No solution found or the solution is not optimal")
 
 price_1, price_2, price_3, price_4 = 6, 0.21, 0.21, 0.21
 

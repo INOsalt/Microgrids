@@ -50,3 +50,28 @@ x_value = value(model.x)
 y_value = value(model.y)
 print(f"Solution: x = {x_value}, y = {y_value}")
 
+
+# 创建一个模型
+model = ConcreteModel()
+
+# 定义非负实数变量
+model.x = Var(within=NonNegativeReals)
+model.y = Var(within=NonNegativeReals)
+
+# 定义目标函数（最小化目标）
+model.obj = Objective(expr=model.x + 2*model.y, sense=minimize)
+
+# 定义约束
+model.constraint = Constraint(expr=2*model.x + model.y >= 1)
+
+# 使用Ipopt求解器
+solver = SolverFactory('ipopt')
+
+# 求解问题
+solution = solver.solve(model, tee=True)
+
+# 打印解决方案
+x_value = value(model.x)
+y_value = value(model.y)
+print(f"Solution: x = {x_value}, y = {y_value}")
+

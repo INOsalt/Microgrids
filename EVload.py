@@ -81,9 +81,6 @@ def EV_load(price_1, price_2, price_3, price_4):
     # 定义每个时刻每个节点的充电汽车数变量
     charging_cars = {(i, t): mdl.integer_var(name=f'charging_cars_{i}_{t}')
                      for i in range(40) for t in np.arange(0, 24.05, 0.05)}
-    # 定义与spaced_connection数量相同的变量，变量范围是0到1
-    transition_vars = {pair: mdl.continuous_var(lb=0, ub=1, name=f'transition_var_{pair[0]}_{pair[1]}')
-                       for pair in spaced_connection}
 
     # 对于每个时间点和节点，充电车数量不超过最大车辆数
     X = initial_EV.copy()  # 复制初始状态以避免修改原始数据
@@ -101,23 +98,23 @@ def EV_load(price_1, price_2, price_3, price_4):
         for i in range(40):
             power = power_0_to_5 if i in range(6) else power_6_to_39
             current_val = updated_Y[i]
-            mdl.add_constraint(charging_cars[i, time] * power <= current_val, f'max_power_constraint_{i}_{time}')
+            mdl.add_constraint(charging_cars[i, time] * power * 0.05<= current_val, f'max_power_constraint_{i}_{time}')
         Y = updated_Y  # 更新X以用于下一个时间步的计算
 
     total_charging_demand = np.sum(charging_requirement)
 
     # 所有充电负荷的和等于充电需求的和允许一定的偏差
-    allowed_deviation = 0.1
+    allowed_deviation = 0.01
     mdl.add_constraint(
         mdl.sum(
-            charging_cars[i, t] * (power_0_to_5 if i < 6 else power_6_to_39)
+            charging_cars[i, t] * (power_0_to_5 if i < 6 else power_6_to_39) * 0.05
             for i in range(40) for t in keys
         ) <= total_charging_demand * (1 + allowed_deviation),
         "upper_bound_total_charging_demand_constraint"
     )
     mdl.add_constraint(
         mdl.sum(
-            charging_cars[i, t] * (power_0_to_5 if i < 6 else power_6_to_39)
+            charging_cars[i, t] * (power_0_to_5 if i < 6 else power_6_to_39) * 0.05
             for i in range(40) for t in keys
         ) >= total_charging_demand * (1 - allowed_deviation),
         "lower_bound_total_charging_demand_constraint"
@@ -155,7 +152,7 @@ def EV_load(price_1, price_2, price_3, price_4):
             for j, t in enumerate(keys):
                 # 计算每个节点在每个时刻的充电负荷
                 power = power_0_to_5 if i < 6 else power_6_to_39
-                charging_load[i, j] = charging_cars[i, t].solution_value * power
+                charging_load[i, j] = charging_cars[i, t].solution_value * power * 0.05
 
         # 计算总成本
         total_cost = 0
@@ -164,6 +161,15 @@ def EV_load(price_1, price_2, price_3, price_4):
                 node_price = price_1 if i < 6 else (price_2 if i < 12 else (price_3 if i < 24 else price_4))
                 total_cost += charging_cars[i, t].solution_value * (
                     power_0_to_5 if i < 6 else power_6_to_39) * node_price
+
+        # 使用pandas将charging_load转换为DataFrame
+        df_charging_load = pd.DataFrame(charging_load, columns=keys)
+
+        # 将DataFrame保存为CSV文件
+        csv_file_path = 'charging_load.csv'  # 定义CSV文件的名称和路径
+        df_charging_load.to_csv(csv_file_path, index_label='节点编号')
+
+        print(f'充电负荷数据已保存到 {csv_file_path}')
 
         return charging_load, total_cost
     else:
