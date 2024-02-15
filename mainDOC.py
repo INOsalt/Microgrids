@@ -3,20 +3,22 @@ from docplex.mp.model import Model
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from gridinfo import microgrid_pv, microgrid_wt, microgrid_load_dict, C_buy, C_sell
 
 #整体优化============
 class TotalOptimizationManager:
-    def __init__(self, microgrids, num_microgrid, C_buy, C_sell):
+    def __init__(self, microgrids, num_microgrid, C_buymic, C_sellmic):
         self.microgrids = microgrids
         self.num_microgrid = num_microgrid
-        self.C_buy = C_buy
-        self.C_sell = C_sell
+        self.C_buymic = C_buymic
+        self.C_sellmic = C_sellmic
         self.model = Model(name="Microgrid Optimization Problem")
 
     def setup(self):
         objective_all = 0
         for i in range(len(self.microgrids)):
-            optimization = OptimizationMicrogrid(self.model, self.microgrids[i], self.num_microgrid)
+            optimization = OptimizationMicrogrid(self.model, self.microgrids[i], self.num_microgrid,
+                                                 self.C_buymic,self.C_sellmic)
             optimization.add_variable()
             optimization.add_constraints()
             objective_all += optimization.add_objective()  # 累加目标函数表达式
@@ -80,12 +82,12 @@ class TotalOptimizationManager:
             print("Optimal solution not found. Status:", solve_details.status)
             print("Solve time:", solve_details.time, "seconds")
 
-            # 如果未找到最优解，则检查未满足的约束
-            if solve_details.status in ['infeasible', 'integer infeasible']:
-                print("Checking for unsatisfied constraints...")
-                unsatisfied_constraints = self.model.find_unsatisfied_constraints()
-                for constraint in unsatisfied_constraints:
-                    print(constraint)
+            # # 如果未找到最优解，则检查未满足的约束
+            # if solve_details.status in ['infeasible', 'integer infeasible']:
+            #     print("Checking for unsatisfied constraints...")
+            #     unsatisfied_constraints = self.model.find_unsatisfied_constraints()
+            #     for constraint in unsatisfied_constraints:
+            #         print(constraint)
 
 
     def calculate_grid_power_flows(self):
@@ -126,18 +128,8 @@ class TotalOptimizationManager:
 
             # 添加外电网购售成本
             for k in range(24):
-                Fdown += extracted_values.get(f'Pbuy_{grid_id}_{k}', 0) * self.C_buy[k]
-                Fdown += extracted_values.get(f'Psell_{grid_id}_{k}', 0) * self.C_sell[k]
-
-            # 添加弃电惩罚
-            if grid.P_pv is not None:
-                for k in range(24):
-                    curtail_Ppv = max(0, grid.P_pv[k] - extracted_values.get(f'Ppv_{grid_id}_{k}', 0))
-                    Fdown += curtail_Ppv * C_re
-            if grid.P_wt is not None:
-                for k in range(24):
-                    curtail_Pwt = max(0, grid.P_wt[k] - extracted_values.get(f'Pwt_{grid_id}_{k}', 0))
-                    Fdown += curtail_Pwt * C_re
+                Fdown += extracted_values.get(f'Pbuy_{grid_id}_{k}', 0) * C_buy[k]
+                Fdown += extracted_values.get(f'Psell_{grid_id}_{k}', 0) * C_sell[k]
 
             # 微电网群交易成本
             if self.num_microgrid > 1:
@@ -147,9 +139,62 @@ class TotalOptimizationManager:
                             for k in range(24):
                                 pbuymic = extracted_values.get(f'Pbuymic_{grid_id}_{l}_{k}', 0)
                                 psellmic = extracted_values.get(f'Psellmic_{grid_id}_{l}_{k}', 0)
-                                Fdown += pbuymic * self.C_buy[k] + psellmic * self.C_sell[k]
+                                Fdown += pbuymic * self.C_buymic[k] + psellmic * self.C_sellmic[k]
 
         return Fdown
+
+    def extract_pnetmic_values_by_hour(self):
+        """
+        提取优化后的Pnetmic_{a}_{b}_{k}值，首先按小时k索引，然后按微电网对(a, b)。
+        """
+        pnetmic_values_by_hour = {}
+        for k in range(24):
+            for a in range(self.num_microgrid):
+                for b in range(self.num_microgrid):
+                    if a != b:  # 仅考虑不同微电网间的交易
+                        var_name = f"Pnetmic_{a}_{b}_{k}"
+                        variable = self.model.get_var_by_name(var_name)
+                        if variable is not None:  # 如果变量存在
+                            if k not in pnetmic_values_by_hour:
+                                pnetmic_values_by_hour[k] = {}
+                            pnetmic_values_by_hour[k][(a, b)] = variable.solution_value
+                        else:
+                            pnetmic_values_by_hour[k][(a, b)] = 0
+        return pnetmic_values_by_hour
+
+    def extract_pnet_values_by_hour(self):
+        """
+        提取优化后的Pnet_{a}_{k}值，首先按小时k索引，然后按微电网a。
+        """
+        pnet_values_by_hour = {}
+        for k in range(24):
+            for a in range(self.num_microgrid):
+                var_name = f"Pnet_{a}_{k}"
+                variable = self.model.get_var_by_name(var_name)
+                if variable is not None:  # 如果变量存在
+                    if k not in pnet_values_by_hour:
+                        pnet_values_by_hour[k] = {}
+                    pnet_values_by_hour[k][a] = variable.solution_value
+                else:
+                    pnet_values_by_hour[k][a] = 0
+        return pnet_values_by_hour
+
+    def extract_psg_values_by_hour(self):
+        """
+        提取优化后的Psg_{microgrid.id}_{i}值，按小时i索引。
+        每个小时的键对应一个数组，包含了所有微电网在该小时的Psg值。
+        """
+        psg_values_by_hour = {}
+        for i in range(24):  # 对于一天中的每个小时
+            psg_values_by_hour[i] = []  # 初始化当前小时的Psg列表
+            for microgrid_id in range(self.num_microgrid):  # 遍历每个微电网
+                var_name = f"Psg_{microgrid_id}_{i}"  # 构建变量名
+                variable = self.model.get_var_by_name(var_name)  # 尝试获取变量
+                if variable is not None:  # 如果变量存在
+                    psg_values_by_hour[i].append(variable.solution_value)  # 添加变量的解决方案值到列表
+                else:
+                    psg_values_by_hour[i].append(0)  # 如果变量不存在，添加0到列表
+        return psg_values_by_hour
 
 class Visualization:
     def __init__(self, optimization_manager, microgrids, num_microgrid, model):
@@ -178,7 +223,6 @@ class Visualization:
                         if self.model.get_var_by_name(var_name):
                             self.extracted_values[var_name] = self.model.get_var_by_name(var_name).solution_value
 
-
             # 创建DataFrame
             # 创建DataFrame
         df = pd.DataFrame(list(self.extracted_values.items()), columns=['Variable', 'Value'])
@@ -189,8 +233,7 @@ class Visualization:
     def plot_microgrid_charts(self, microgrid_id):
         # 为每个小时准备数据
         hours = np.arange(1, 25)
-        Pmt_data = np.array([self.extracted_values.get(f'Pmt_{microgrid_id}_{k}', 0) for k in range(24)])
-        Pde_data = np.array([self.extracted_values.get(f'Pde_{microgrid_id}_{k}', 0) for k in range(24)])
+        Psg_data = np.array([self.extracted_values.get(f'Psg_{microgrid_id}_{k}', 0) for k in range(24)])
         Ppv_data = np.array([self.extracted_values.get(f'Ppv_{microgrid_id}_{k}', 0) for k in range(24)])
         Pwt_data = np.array([self.extracted_values.get(f'Pwt_{microgrid_id}_{k}', 0) for k in range(24)])
         Pcha_data = -np.array([self.extracted_values.get(f'Pcha_{microgrid_id}_{k}', 0) for k in range(24)])  # 负值
@@ -212,14 +255,13 @@ class Visualization:
 
         # 绘制堆叠条形图
         plt.figure(figsize=(12, 8))
-        plt.bar(hours, Pmt_data, label='Pmt')
-        plt.bar(hours, Pde_data, bottom=Pmt_data, label='Pde')
-        plt.bar(hours, Ppv_data, bottom=Pmt_data + Pde_data, label='Ppv')
-        plt.bar(hours, Pwt_data, bottom=Pmt_data + Pde_data + Ppv_data, label='Pwt')
-        plt.bar(hours, Pdis_data, bottom=Pmt_data + Pde_data + Ppv_data + Pwt_data, label='Pdis')
-        plt.bar(hours, Pbuy_data, bottom=Pmt_data + Pde_data + Ppv_data + Pwt_data + Pdis_data, label='Pbuy')
+        plt.bar(hours, Psg_data, label='Psg')
+        plt.bar(hours, Ppv_data, bottom=Psg_data, label='Ppv')
+        plt.bar(hours, Pwt_data, bottom=Psg_data + Ppv_data, label='Pwt')
+        plt.bar(hours, Pdis_data, bottom=Psg_data + Ppv_data + Pwt_data, label='Pdis')
+        plt.bar(hours, Pbuy_data, bottom=Psg_data + Ppv_data + Pwt_data + Pdis_data, label='Pbuy')
         # 微电网间交换功率的堆叠
-        current_bottom = Pmt_data + Pde_data + Ppv_data + Pwt_data + Pdis_data + Pbuy_data
+        current_bottom = Psg_data + Ppv_data + Pwt_data + Pdis_data + Pbuy_data
         for j, Pbuymic_data in Pbuymic_data_dict.items():
             plt.bar(hours, Pbuymic_data, bottom=current_bottom, label=f'Pbuymic to Grid {j}')
             current_bottom = current_bottom.astype('float64')
@@ -245,15 +287,15 @@ class Visualization:
         plt.show()
 
 
-def MGO(C_buy, C_sell, EVload):
+def MGO(C_buymic, C_sellmic, EVload):
     C_re = 0.1
+
+
     #======grid1========#
     id1 = 0
-    load_1 = [88.24, 83.01, 80.15, 79.01, 76.07, 78.39, 89.95, 128.85, 155.45, 176.35, 193.71, 182.57, 179.64, 166.31, 164.61, 164.61, 174.48, 203.93, 218.99, 238.11, 216.14, 173.87, 131.07, 94.04]
-
-    P_wt_1 = [66.9, 68.2, 71.9, 72, 78.8, 94.8, 114.3, 145.1, 155.5, 142.1, 115.9, 127.1, 141.8, 145.6, 145.3, 150, 206.9, 225.5, 236.1, 210.8, 198.6, 177.9, 147.2, 58.7]
-
-    P_pv_1 = [0, 0, 0, 0, 0.06, 6.54, 20.19, 39.61, 49.64, 88.62, 101.59, 66.78, 110.46, 67.41, 31.53, 50.76, 20.6, 22.08, 2.07, 0, 0, 0, 0, 0]
+    load_1 = microgrid_load_dict[id1]
+    P_wt_1 = microgrid_wt[id1]
+    P_pv_1 = microgrid_pv[id1]
 
 
     ebattery_1 = 300
@@ -261,54 +303,75 @@ def MGO(C_buy, C_sell, EVload):
     socmin_1 = 0.3
     socmax_1 = 0.95
     pcs_1 = 40
-    POWER_1 = 160  # 主网功率交换限制
-    C_de_1 = 0.7939  # 柴油轮机成本系数
-    POWER_MIC_1 = 100
+    POWER_1 = 20000  # 主网功率交换限制
+    C_sg_1 = 0.7939  # 柴油轮机成本系数
+    POWER_MIC_1 = [0, 18000, 18000, 0] #1-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
+    POWER_SG_1 = 15000
     #======grid2========#
     id2 = 1
-    P_pv_2 = [0, 0, 0, 0, 0, 0, 30.2278361336943, 41.4382515605911, 7.56783114759613, 72.7276154279869,
-              16.6104475197874, 30.5651618832424, 52.8224212142948, 60.6698641822058, 13.8455529913677,
-              41.3903809205061, 79.6270489842773, 56.6087525272567, 6.44538407391447, 0, 0, 0, 0, 0]
+    load_2 = microgrid_load_dict[id2]
+    P_wt_2 = microgrid_wt[id2]
+    P_pv_2 = microgrid_pv[id2]
 
-    load_2 = [176.48, 166.02, 160.3, 158.02, 152.14, 156.78, 179.9, 497.7, 110.9, 152.7, 187.42, 165.14,
-              159.28, 132.62, 329.22, 329.22, 348.96, 407.86, 437.98, 476.22, 432.28, 347.74, 262.14, 188.08]
     ebattery_2 = 300  # 电池容量
     soc0_2 = 0.5  # 初始SOC
     socmin_2 = 0.3  # 最小SOC
     socmax_2 = 0.95  # 最大SOC
     pcs_2 = 40  # 充/放电功率限制
-    C_mt_2 = 0.939  # 燃气轮机成本系数
-    POWER_2 = 250  # 主网功率交换限制
-    POWER_MIC_2 = 100
+    C_sg_2 = 0.7939  # 柴油轮机成本系数
+    POWER_2 = 20000  # 主网功率交换限制
+    POWER_MIC_2 = [18000, 0, 16000, 16000] #2-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
+    POWER_SG_2 = 6000
     #=======grid3=========#
     # 商业区域电网
     id3 = 2
-    load_3 = [
-    106.366569275484, 106.889216100582, 109.234278126231, 119.426356247170, 134.237337562312, 137.374520910876,
-    155.384596992178, 163.419896012172, 176.311691418602, 178.445403906834, 187.748871931280, 189.117240142180,
-    197.952879157646, 229.262602022253, 231.095578035511, 235.747030971555, 238.965724595163, 241.209217603922,
-    248.626493624983, 124.237337562312, 119.426356247170, 109.234278126231, 106.889216100582, 106.366569275484
-    ]
+    load_3 = microgrid_load_dict[id3]
+    P_wt_3 = microgrid_wt[id3]
+    P_pv_3 = microgrid_pv[id3]
 
-    # 热负荷
-    LoadH = [x * 0.79 for x in load_3]
     ebattery_3 = 300  # 电池容量
     soc0_3 = 0.5  # 初始SOC
     socmin_3 = 0.3  # 最小SOC
     socmax_3 = 0.95  # 最大SOC
     pcs_3 = 40  # 充/放电功率限制
-    C_mt_3 = 0.939  # 燃气轮机成本系数
-    POWER_3 = 160  # 主网功率交换限制
-    POWER_MIC_3 = 100
+    C_sg_3 = 0.7939  # 柴油轮机成本系数
+    POWER_3 = 20000  # 主网功率交换限制
+    POWER_MIC_3 = [18000, 16000, 0, 16000] #3-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
+    POWER_SG_3 = 6000
 
+    # =======grid4=========#
+    # 商业区域电网
+    id4 = 4
+    load_4 = microgrid_load_dict[id4]
+    P_wt_4 = microgrid_wt[id4]
+    P_pv_4 = microgrid_pv[id4]
+
+    ebattery_4 = 300  # 电池容量
+    soc0_4 = 0.5  # 初始SOC
+    socmin_4 = 0.3  # 最小SOC
+    socmax_4 = 0.95  # 最大SOC
+    pcs_4 = 40  # 充/放电功率限制
+    C_sg_4 = 0.7939  # 柴油轮机成本系数
+    POWER_4 = 0  # 主网功率交换限制
+    POWER_MIC_4 = [0, 16000, 16000, 0]  # 4-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
+    POWER_SG_4 = 4000
+
+    #===============优化部分===========#
     # 创建 Microgrid 实例
-    num_microgrid = 3
-    grid1 = Microgrid(id1, load_1, POWER_1, POWER_MIC_1, ebattery_1, socmin_1, socmax_1, soc0_1, pcs_1, P_pv=P_pv_1, P_wt=P_wt_1, C_mt=None, C_de=C_de_1, C_re=C_re)
-    grid2 = Microgrid(id2, load_2, POWER_2, POWER_MIC_2, ebattery_2, socmin_2, socmax_2, soc0_2, pcs_2, P_pv=P_pv_2, P_wt=None, C_mt=C_mt_2, C_de=None, C_re=C_re)
-    grid3 = Microgrid(id3, load_3, POWER_3, POWER_MIC_3, ebattery_3, socmin_3, socmax_3, soc0_3, pcs_3, P_pv=None, P_wt=None, C_mt=C_mt_3, C_de=None, C_re=C_re)
+    num_microgrid = 4
+    grid1 = Microgrid(id1, load_1, POWER_1, POWER_MIC_1, POWER_SG_1, ebattery_1, socmin_1, socmax_1, soc0_1, pcs_1,
+                      P_pv=P_pv_1, P_wt=P_wt_1, C_sg=C_sg_1)
+    grid2 = Microgrid(id2, load_2, POWER_2, POWER_MIC_2, POWER_SG_2, ebattery_2, socmin_2, socmax_2, soc0_2, pcs_2,
+                      P_pv=P_pv_2, P_wt=P_wt_2, C_sg=C_sg_2)
+    grid3 = Microgrid(id3, load_3, POWER_3, POWER_MIC_3, POWER_SG_3, ebattery_3, socmin_3, socmax_3, soc0_3, pcs_3,
+                      P_pv=P_pv_3, P_wt=P_wt_3, C_sg=C_sg_3)
+    grid4 = Microgrid(id4, load_4, POWER_4, POWER_MIC_4, POWER_SG_4, ebattery_4, socmin_4, socmax_4, soc0_4, pcs_4,
+                      P_pv=P_pv_4, P_wt=P_wt_4, C_sg=C_sg_4)
+
 
     # 创建 TotalOptimizationManager 实例
-    total_optimization_manager = TotalOptimizationManager([grid1, grid2, grid3], num_microgrid, C_buy, C_sell)
+    total_optimization_manager = TotalOptimizationManager([grid1, grid2, grid3, grid4], num_microgrid,
+                                                          C_buymic, C_sellmic)
 
     # 设置优化问题
     total_optimization_manager.setup()
@@ -321,6 +384,9 @@ def MGO(C_buy, C_sell, EVload):
 
     # 获取目标函数的值
     Fdown = total_optimization_manager.calculate_objective(C_re)
+    pnetmic_values_by_hour = total_optimization_manager.extract_pnetmic_values_by_hour()
+    pnet_values_by_hour = total_optimization_manager.extract_pnet_values_by_hour()
+    psg_values_by_hour = total_optimization_manager.extract_psg_values_by_hour()
 
     # #===============画图=================
 
@@ -335,20 +401,20 @@ def MGO(C_buy, C_sell, EVload):
     # for microgrid_id in range(num_microgrid):
     #     visualization.plot_microgrid_charts(microgrid_id)
     # #
-    return Fdown
+    return Fdown, pnetmic_values_by_hour, pnet_values_by_hour, psg_values_by_hour
 
 
 
 
 #测试#==================
 #全局
-C_buy = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
-        0.82, 0.82, 0.82, 0.53, 0.53, 0.53, 0.82, 0.82, 0.82, 0.53, 0.53, 0.53]
-
-C_sell = [0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.42, 0.42, 0.42, 0.65, 0.65,
-         0.65, 0.65, 0.65, 0.42, 0.42, 0.42, 0.65, 0.65, 0.65, 0.42, 0.42, 0.42]
-Fdown = MGO(C_buy, C_sell)
-print(Fdown)
+# C_buy = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
+#         0.82, 0.82, 0.82, 0.53, 0.53, 0.53, 0.82, 0.82, 0.82, 0.53, 0.53, 0.53]
+#
+# C_sell = [0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.42, 0.42, 0.42, 0.65, 0.65,
+#          0.65, 0.65, 0.65, 0.42, 0.42, 0.42, 0.65, 0.65, 0.65, 0.42, 0.42, 0.42]
+# Fdown = MGO(C_buy, C_sell)
+# print(Fdown)
 
 # #全局
 # C_buy = [0.38, 0.38, 0.38, 0.38, 0.38, 0.38, 0.82, 0.82, 0.82, 1.35, 1.35, 1.35, 1.35, 1.35, 0.82, 0.82, 0.82, 1.35, 1.35, 1.35, 1.35, 1.35, 0.38, 0.38]

@@ -2,37 +2,22 @@ import numpy as np
 import scipy.io as sio
 import pandas as pd
 
+
 class PowerFlow():
-    def __init__(self,dir) -> None:
-        mpc = sio.loadmat(dir)[dir.split('.')[0]]
-        
-        BusKey = ["bus_i", "type", "Pd", "Qd", "Gs", "Bs", "area", "Vm", "Va", "baseKV", "zone", "Vmax", "Vmin"]
-        GenKey = ["gen_bus", "Pg", "Qg", "Qmax", "Qmin", "Vg", "mBase", "status", "Pmax", "Pmin", "Pc1", "Pc2", "Qc1min", "Qc1max", "Qc2min", "Qc2max", "ramp_agc", "ramp_10", "ramp_30", "ramp_q", "apf"]
-        BranchKey = ["fbus", "tbus", "r", "x", "b", "rateA", "rateB", "rateC", "ratio", "angle", "status", "angmin", "angmax"]
-        # ["2", "startup", "shutdown", "n", "x1", "y1", "..."]
+    def __init__(self, branch, gen, bus) -> None:
 
-        self.version = mpc['version'][0,0]
-        self.baseMVA =mpc['baseMVA'][0,0][0,0]
-        self.gencost = mpc['gencost'][0,0]
+        self.baseMVA = 20 #MVA
 
-        # try
-        # self.bus_name = mpc['bus_name'][0,0]
+        # self.bus = dict(zip(BusKey,mpc['bus'][0,0].T))
+        self.bus = bus
+        self.gen = gen
+        self.branch = branch
+        self.bus_i = self.bus['bus_i'] #kW	KVAR
 
-        self.bus = dict(zip(BusKey,mpc['bus'][0,0].T))
-        self.gen = dict(zip(GenKey,mpc['gen'][0,0].T))
-        self.branch = dict(zip(BranchKey,mpc['branch'][0,0].T))
-
-        self.bus_i = self.bus['bus_i']
-        # 替换节点编号到0开始的编号
-        bus_i_dict = dict(zip(self.bus_i,range(len(self.bus_i))))
-
-        self.branch['fbus'] = np.array([bus_i_dict[i] for i in self.branch['fbus']])
-        self.branch['tbus'] = np.array([bus_i_dict[i] for i in self.branch['tbus']])
-        self.gen['gen_bus'] = np.array([bus_i_dict[i] for i in self.gen['gen_bus']])
-        self.bus['bus_i'] = np.array([bus_i_dict[i] for i in self.bus['bus_i']])
 
         self.nodeNum = len(self.bus['bus_i'])
         self.branchNum = len(self.branch['fbus'])
+
         pass
 
     # 由广义节点-支路关联矩阵和广义支路导纳矩阵生成节点导纳矩阵
@@ -71,14 +56,6 @@ class PowerFlow():
             self.N_B_Aij[int(self.branch["fbus"][i]),i] = 1
             self.N_B_Aij[int(self.branch["tbus"][i]),i] = -1
 
-    def _make_cost(self,P_gen,typekey):
-        # 生成发电机成本函数
-        self.cost = 0
-        Key = np.concatenate((typekey[0],typekey[1])) # 生成发电机类型的key
-        Key = np.sort(Key)
-        P_gen = P_gen[Key]
-        self.Cost = np.sum(self.gencost[:,4] * P_gen**2+self.gencost[:,5] * P_gen+self.gencost[:,6])
-
     # result后处理
     def _ProcessRes(self,S_Gen,S_load,typekey):
         S_Gen = S_Gen*self.baseMVA
@@ -97,23 +74,8 @@ class PowerFlow():
                                      S_load.imag]).T
         self.result_bus_col = ['bus_i','Vabs','Vangle','Iabs','Iangle','Gen_P','Gen_Q','Pload','Qload']
         self.result_bus = np.round(self.result_bus,4)
-        self._make_cost(self.result_bus[:,5],typekey)
-        
-        # self.result_branch_col = ['From','To','From P','From Q','To P','To Q','Loss P','Loss Q']
-        # self._GetN_B_Aij()
+        #self._make_cost(self.result_bus[:,5],typekey)
 
-        # # Ybranch = self.N_B_Aij_Generalized.T @ self.Ybus @ self.N_B_Aij
-        # V_branch = self.N_B_Aij_Generalized.T @ self.V_nr
-        # I_branch = self.Ybranch_Generalized @ V_branch
-        # S_branch = V_branch * np.conj(I_branch) * 100
-        # # self.result_branch = np.vstack([self.branch['fbus'],
-        # #                                 self.branch['tbus'],
-        # #                                 S_branch.real,
-        # #                                 S_branch.imag,
-        # #                                 S_branch.real,
-        # #                                 S_branch.imag,
-        # #                                 S_branch.real,
-        # #                                 S_branch.imag]).T
         pass
 
     # 从节点电压向量  ->  eifi（去除V_delta节点）  V = ei + jfi
@@ -147,22 +109,22 @@ class PowerFlow():
         Sbus = Sbus.conj()
         return Ibus,Sbus
     
-    # 计算节点外部注入功率   =（发电机有功无功注入 - 负荷有功无功注入）/基准电压 （与Matpower 格式的数据换算有关）
-    def _make_Sin(self):
-        S_load = (self.bus['Pd'] + 1j * self.bus['Qd'])
+    # 计算节点外部注入功率   =（发电机有功无功注入 - 负荷有功无功注入）/基准电压 注意单位 原数据是kW 和KVA
+    def _make_Sin(self):#
+        # 转换负载功率为pu
+        S_load = (self.bus['Pd'] + 1j * self.bus['Qd']) / 1000 / self.baseMVA
 
+        # 转换发电机功率为pu
         gen_on = np.where(self.gen['status'] == 1)[0]
-        Gen = self.gen['Pg'][gen_on] + 1j * self.gen['Qg'][gen_on]
+        Gen = (self.gen['Pg'][gen_on] + 1j * self.gen['Qg'][gen_on]) / 1000 / self.baseMVA
         S_Gen = np.zeros(self.nodeNum, dtype=complex)
-        for i,seq in enumerate(self.gen['gen_bus'][gen_on]) :
-            S_Gen[seq] = S_Gen[seq] + Gen[i]
+        for i, seq in enumerate(self.gen['gen_bus'][gen_on]):
+            S_Gen[seq] += Gen[i]
 
-        S_load=S_load/self.baseMVA
-        S_Gen=S_Gen/self.baseMVA
-        self.Sin = S_Gen-S_load
+        self.Sin = S_Gen - S_load
+
         return S_Gen,S_load
 
-    # 效率低，不用
     def _make_PspQsp(self,typekey):
 
         Key = np.concatenate((typekey[1],typekey[2]))
@@ -176,7 +138,7 @@ class PowerFlow():
         # 计算F(x)的值（直接通过网络矩阵计算速度快）
         # S_in - V @  Y.conj @ V.conj = = 0!
         Ibus ,Sbus = self._make_Sbus(V)
-        Sbus = self.Sin -  Sbus
+        Sbus = self.Sin - Sbus
         # Psp,Qsp = self._make_PspQsp(typekey)
         self.Sbustext = Sbus
         ai = np.real(Ibus) ## 难道问题出在了这里？
@@ -186,14 +148,9 @@ class PowerFlow():
         fi = np.imag(V)
 
         Key = np.concatenate((typekey[1],typekey[2]))
-        Key=np.sort(Key)
+        Key = np.sort(Key)
 
-        # 计算F(x)的值
-        # P_delta = Psp - (ai[Key]*ei[Key] + bi[Key]*fi[Key]) 
-        # Q_delta = Qsp - (ai[typekey[2]]*fi[typekey[2]] - bi[typekey[2]]*ei[typekey[2]])
-        # VV_delta = V[typekey[1]]**2-ei[typekey[1]]**2-fi[typekey[1]]**2
-
-        P_delta = np.delete(np.real(Sbus),typekey[0],None)   
+        P_delta = np.delete(np.real(Sbus),typekey[0],None)
         Q_delta = np.imag(Sbus)[typekey[2]]
         VV_delta = self.bus['Vm'][typekey[1]]**2-ei[typekey[1]]**2-fi[typekey[1]]**2
 
@@ -251,59 +208,67 @@ class PowerFlow():
         S = np.delete(S,typekey[0],axis=1)
         Jac[self.nodeNum-1+typekey[2].shape[0]:,:] = np.concatenate((R,S),axis=1)[Key,:]
         return Jac
-    
-    # 新增一条元数据——改变拓扑结构
-    def AppendData(self,type,data):
-        if type == 'bus':
-            self.bus = self.bus.drop(data)
-        elif type == 'branch':
-            self.branch = self.branch.drop(data)
-        elif type == 'gen':
-            self.gen = self.gen.drop(data)
-        pass
 
-    # 删除一条元数据——改变拓扑结构
-    def DeleteData(self,type,data):
-        if type == 'bus':
-            self.bus = self.bus.drop(data)
-        elif type == 'branch':
-            self.branch = self.branch.drop(data)
-        elif type == 'gen':
-            self.gen = self.gen.drop(data)
-            
-        pass
-      # 运行牛拉法潮流
-    def RunPF(self,el = 1e-6,lmax = 100):
+
+    # 检查无功是否超出 注意单位
+    def _check_and_adjust_qg(self):
+        for i, gen_bus in enumerate(self.gen['gen_bus']):
+            # 计算无功功率
+            V_gen = self.V_nr[gen_bus]  # 发电机节点的电压
+            S_gen = V_gen * np.conj(self.Ybus[gen_bus, :] @ self.V_nr)  # 发电机节点的复功率
+            Q_gen = S_gen.imag * self.baseMVA  # 无功功率，转换为物理单位
+
+            # self.gen['Qmax'] 和 self.gen['Qmin'] 是以 kVAR 为单位
+            Qmax_MVAR = self.gen['Qmax'][i] / 1000  # 转换为 MVAR
+            Qmin_MVAR = self.gen['Qmin'][i] / 1000  # 转换为 MVAR
+
+            if Q_gen > Qmax_MVAR:
+                Q_gen = Qmax_MVAR
+            elif Q_gen < Qmin_MVAR:
+                Q_gen = Qmin_MVAR
+
+            self.gen['Qg'][i] = Q_gen * 1000  # 将结果转换回 kVAR 存储
+
+    # 运行牛拉法潮流
+    def RunPF(self, el=1e-6, lmax=100):
         self._Get_Ybus()
-        # self.Ybus = np.loadtxt("Ybus.txt",dtype=complex)
-        typekey = self._bus_types()  # [ref,pv,pq]
-        # init value
+        typekey = self._bus_types()  # [ref, pv, pq]
 
-        G = self.Ybus.real
-        B = self.Ybus.imag
-
+        # 初始化电压
         self.V0 = self.bus['Vm'] * np.exp(1j * np.pi / 180 * self.bus['Va'])
         self.V_nr = self.V0
-        S_Gen,S_load = self._make_Sin()
-        # NR begin!!
+
+        # 初始化注入功率
+        S_Gen, S_load = self._make_Sin()
+
+        # 迭代开始
         lnum = 0
-        while True: # 最多100次迭代
-            lnum = lnum + 1 # 迭代次数加1
-            # x_k+1 = x_k - J(x_k)^-1 * F(x_k)
-            Fx,ai,bi,ei,fi = self._make_fx(self.V_nr,typekey)
-            Jac = self._make_Jac(ai,bi,ei,fi,G,B,typekey)
-            delta = np.linalg.solve(Jac,-Fx)
-            self.eifi = self._V2eifi(self.V_nr,typekey)
-            self.eifi = self.eifi + delta
-            print("max",np.max(np.abs(Fx)))
-            self.V_nr = self._eifi2V(self.eifi,typekey)
+        while True:
+            lnum += 1  # 迭代次数加1
+
+            # 计算功率不平衡和雅可比矩阵
+            Fx, ai, bi, ei, fi = self._make_fx(self.V_nr, typekey)
+            Jac = self._make_Jac(ai, bi, ei, fi, self.Ybus.real, self.Ybus.imag, typekey)
+
+            # 求解增量
+            delta = np.linalg.solve(Jac, -Fx)
+            self.eifi = self._V2eifi(self.V_nr, typekey) + delta
+            self.V_nr = self._eifi2V(self.eifi, typekey)
+
+            # 检查并调整PV节点的无功功率
+            self._check_and_adjust_qg()
+
+            # 检查收敛条件
             if np.max(np.abs(Fx)) < el:
-                self._ProcessRes(S_Gen,S_load,typekey)
+                self._ProcessRes(S_Gen, S_load, typekey)
                 return "NR converge"
+
             if lnum > lmax:
-                self._ProcessRes(S_Gen,S_load,typekey)
-                return "[warn]:Plase Mind !!!! The N-R is not converge!!"
-    
+                print("[warn]: Please Mind! The N-R did not converge!!")
+                break  # 未能收敛，跳出循环
+
+        return self.V_nr
+
 
 def Res2Excel_bus(PF, filename, sheetname):
     writer = pd.ExcelWriter(filename)
@@ -319,9 +284,9 @@ def Res2Excel_branch(PF, filename, sheetname):
 
     writer.save()
     writer.close()
-    
+
 if __name__ == "__main__": # 这里是使用的例子
-    a = PowerFlow("case300.mat")
+    a = PowerFlow("case33mg.mat")
     a.RunPF()
     Res2Excel_bus(a, "result.xlsx", "result_bus")
     df = pd.DataFrame(np.round(a.Ybus,3) )

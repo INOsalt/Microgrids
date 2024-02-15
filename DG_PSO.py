@@ -1,8 +1,9 @@
-
+from powerflow import powerflow
 from mainDOC import MGO
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+
 
 # 开始种群等基本定义
 EV_penetration = 2000 #辆/节点
@@ -85,10 +86,10 @@ def obj_all(x, iter):
     EVload = EVload(EV_1, EV_2, EV_3, EV_4, EV_penetration)
 
     # 调用MGO函数
-    F1, Pnet_mic, PV, WT= MGO(price_buy, price_sell, EVload) # Fdown是成本
+    F1, Pnet_mic, Pnet, Psg = MGO(price_buy, price_sell, EVload) # Fdown是成本
 
     #调用潮流
-    F2 = flow(EVload,Pnet_mic,PV,WT)
+    F2 = powerflow(EVload, Pnet_mic, Pnet, Psg)
 
     return F1, F2
 
