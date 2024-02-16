@@ -4,7 +4,7 @@ import os
 import numpy as np
 
 # 初始化
-EV_penetration = 1000 #辆/每节点
+EV_penetration = 500 #辆/每节点
 power_0_to_5 = 60  # kW 快充
 power_6_to_39 = 7  # kW 慢充
 

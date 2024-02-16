@@ -1,5 +1,10 @@
 import numpy as np
 import pandas as pd
+import os
+
+#=================================
+EV_penetration = 200
+num_nodes = 40
 
 # 定义节点列表
 nodes = [101, 102, 103, 104, 105, 106, 201, 202, 203, 204, 205, 206, 207, 208, 209, 301, 302, 303, 304, 305, 306,
@@ -7,9 +12,55 @@ nodes = [101, 102, 103, 104, 105, 106, 201, 202, 203, 204, 205, 206, 207, 208, 2
 
 # 创建一个从节点编号到索引的映射
 node_mapping = {node: index for index, node in enumerate(nodes)}
+# 反向映射：从矩阵索引到节点编号
+reverse_node_mapping = {idx: node for node, idx in node_mapping.items()}
 
+# 初始化所有车辆都停泊在起点，没有车辆在移动状态
+start_points = [202, 203, 204, 205, 206, 208, 209, 302, 303, 304, 305, 306, 307, 308, 309, 313, 314, 315, 316, 317,
+                318, 401, 402, 403, 404, 405, 406, 407]
+end_points = [101, 102, 103, 104, 105, 106]
 
-#=========潮流计算数据处理 牛拉法需要的格式：
+# 初始车辆分布
+initial_EV = np.zeros(2 * num_nodes)
+starts = np.array([node_mapping[point] for point in start_points])
+initial_EV[starts] = EV_penetration
+
+#直接相连的边: {(12, 2), (5, 4), (3, 5), (3, 2), (15, 3), (6, 1), (1, 4), (2, 1), (26, 5), (5, 0), (2, 5), (25, 3), (10, 3), (2, 4), (4, 0)}
+#间隔一个点连接的边: {(2, 1), (2, 5), (10, 3), (26, 25), (12, 2), (7, 6), (12, 6), (10, 12), (25, 26), (5, 0), (16, 15), (16, 25), (12, 10), (24, 10), (3, 2), (5, 4), (15, 3), (24, 15), (1, 4), (9, 10), (6, 12), (25, 3), (3, 5), (8, 12), (6, 1), (26, 5), (28, 25), (2, 4)}
+
+# 读取转移矩阵
+# 设置包含CSV文件的文件夹路径
+folder_path = 'TMhalfhour'  # 你需要替换为实际的路径
+
+# 初始化一个空字典来存储矩阵
+transition_matrices = {}
+# 生成步长为0.05的序列从0到24
+keys = np.arange(0, 24, 0.5)
+
+# 遍历文件夹中的所有文件
+i = 0
+for filename in os.listdir(folder_path):
+    if filename.endswith('.csv'):
+        # 构建完整的文件路径
+        file_path = os.path.join(folder_path, filename)
+        matrix_df = pd.read_csv(file_path)
+        # 将DataFrame转换为NumPy数组
+        matrix = matrix_df.to_numpy()
+        #print(f"Matrix {filename} size: {matrix.shape}")#检查矩阵形状
+        matrix_name = keys[i]
+        i = i + 1
+        # 将矩阵存储到字典中
+        transition_matrices[matrix_name] = matrix
+
+#主网电价
+C_buy = [0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205,
+         0.5802, 0.5802, 0.9863, 0.9863, 0.5802, 0.5802, 0.9863, 0.9863,
+         0.9863, 0.9863, 0.9863, 0.5802, 0.5802, 0.5802, 0.5802, 0.5802]
+C_sell = [0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
+          0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
+          0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453]
+
+#=========潮流计算数据处理 牛拉法需要的格式=========================
 ## 读取branch数据的CSV文件
 branch_df = pd.read_csv('grid/branch_data.csv')
 # 将branch_df转换为字典，其中每个值都是NumPy数组
@@ -69,7 +120,7 @@ for hour, pv_percent, wt_percent in available_re_data:
     wt_capacity[:, 1] = wt_capacity[:, 1] * wt_percent / 100
     wt_capacity_dict[int(hour)] = wt_capacity
 
-#=========处理微电网相关数据
+#=========处理微电网相关数据======================
 # 初始化两个字典，用于存储每个微电网的PV和WT发电量向量
 microgrid_pv = {0: np.zeros(24), 1: np.zeros(24), 2: np.zeros(24), 3: np.zeros(24)}
 microgrid_wt = {0: np.zeros(24), 1: np.zeros(24), 2: np.zeros(24), 3: np.zeros(24)}
@@ -77,13 +128,13 @@ microgrid_wt = {0: np.zeros(24), 1: np.zeros(24), 2: np.zeros(24), 3: np.zeros(2
 # 定义一个函数，用于确定Bus ID属于哪个微电网
 def microgrid_id(bus_id):
     if 100 <= bus_id < 200:
-        return 1
+        return 0
     elif 200 <= bus_id < 300:
-        return 2
+        return 1
     elif 300 <= bus_id < 400:
-        return 3
+        return 2
     elif 400 <= bus_id < 500:
-        return 4
+        return 3
 
 # 遍历每个小时，更新微电网的PV和WT发电量
 for hour in range(24):
@@ -100,8 +151,6 @@ for hour in range(24):
 # 初始化一个字典来存储每个微电网每小时的总负荷
 microgrid_load_dict = {0: np.zeros(24), 1: np.zeros(24), 2: np.zeros(24), 3: np.zeros(24)}
 
-# 定义一个函数来判断Bus ID属于哪个微电网
-
 # 遍历nodedata_dict中的每小时节点负荷矩阵
 for hour, loads in nodedata_dict.items():
     # 遍历该小时每个节点的负荷数据
@@ -111,7 +160,7 @@ for hour, loads in nodedata_dict.items():
         if mg_id:  # 检查mg_id是否有效（不是None）
             microgrid_load_dict[mg_id][hour] += kW  # 累加对应微电网的kW负荷 # 累加对应微电网的kW负荷
 
-#=========映射处理
+#=========映射处理=========
 branch['fbus'] = np.array([node_mapping[node] for node in branch['fbus']])
 branch['tbus'] = np.array([node_mapping[node] for node in branch['tbus']])
 bus['bus_i'] = np.array([node_mapping[node] for node in bus['bus_i']])
@@ -157,12 +206,5 @@ for hour, loads in nodedata_dict.items():
             print(f"Warning: Bus ID {bus_id} not found in node_mapping.")
     # 将映射后的数据存储到新字典中
     mapped_nodedata_dict[hour] = mapped_loads
-print(gen)
 
-#======电价
-C_buy = [0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205,
-         0.5802, 0.5802, 0.9863, 0.9863, 0.5802, 0.5802, 0.9863, 0.9863,
-         0.9863, 0.9863, 0.9863, 0.5802, 0.5802, 0.5802, 0.5802, 0.5802]
-C_sell = [0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
-          0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
-          0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453]
+

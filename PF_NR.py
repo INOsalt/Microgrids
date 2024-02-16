@@ -76,7 +76,11 @@ class PowerFlow():
         self.result_bus = np.round(self.result_bus,4)
         #self._make_cost(self.result_bus[:,5],typekey)
 
-        pass
+        # 计算网损：总负荷功率与总发电功率之差的负值
+        losses = np.sum(S_load.real) - np.sum(S_Gen.real)
+
+        return losses
+
 
     # 从节点电压向量  ->  eifi（去除V_delta节点）  V = ei + jfi
     def _V2eifi(self,V,typekey):
@@ -260,14 +264,14 @@ class PowerFlow():
 
             # 检查收敛条件
             if np.max(np.abs(Fx)) < el:
-                self._ProcessRes(S_Gen, S_load, typekey)
-                return "NR converge"
+                losses = self._ProcessRes(S_Gen, S_load, typekey)  # 计算网损
+                return losses  # 返回网损
 
             if lnum > lmax:
                 print("[warn]: Please Mind! The N-R did not converge!!")
                 break  # 未能收敛，跳出循环
 
-        return self.V_nr
+        return None #self.V_nr
 
 
 def Res2Excel_bus(PF, filename, sheetname):
@@ -285,10 +289,3 @@ def Res2Excel_branch(PF, filename, sheetname):
     writer.save()
     writer.close()
 
-if __name__ == "__main__": # 这里是使用的例子
-    a = PowerFlow("case33mg.mat")
-    a.RunPF()
-    Res2Excel_bus(a, "result.xlsx", "result_bus")
-    df = pd.DataFrame(np.round(a.Ybus,3) )
-    df.to_excel("Ybus.xlsx", sheet_name="Ybus")
-    print("cost:",a.Cost)

@@ -1,12 +1,13 @@
 from powerflow import powerflow
 from mainDOC import MGO
+from EVloadDOC import EVload
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+from gridinfo import EV_penetration
 
 
 # 开始种群等基本定义
-EV_penetration = 2000 #辆/节点
 N = 3 # 初始种群个数
 d = 144 # 空间维数
 ger = 50 # 最大迭代次数
@@ -24,26 +25,30 @@ MG_sell = 100 * np.array([
      0.453, 0.453, 0.453, 0.453, 0.453, 0.453],
     [0.2] * 24
 ])
-# 电网分时电价 买卖电价都小于主电网
-EV1 = 100 * np.array([
+
+EVQ1 = 100 * np.array([
     [2] * 24,
-    [0.2] * 24
+    [0.2205] * 24
+])
+EVS1 = 100 * np.array([
+    [2] * 24,
+    [0.2205] * 24
 ])
 EV2 = 100 * np.array([
     [2] * 24,
-    [0.2] * 24
+    [0.2205] * 24
 ])
 EV3 = 100 * np.array([
     [2] * 24,
-    [0.2] * 24
+    [0.2205] * 24
 ])
 EV4 = 100 * np.array([
     [2] * 24,
-    [0.2] * 24
+    [0.2205] * 24
 ])
 
 # 位置限制
-plimit = np.hstack((MG_buy, MG_sell, EV1, EV2, EV3, EV4))
+plimit = np.hstack((MG_buy, MG_sell, EVQ1, EVS1, EV2, EV3, EV4))
 # 速度限制
 vlimit = np.array([1 + np.zeros(144), 1 + np.zeros(144)])  # 速度限制设为 -1 到 1
 
@@ -77,19 +82,33 @@ def obj_all(x, iter):
     # 分割x以获得电价
     price_buy = x[0:24] / 100
     price_sell = x[24:48] / 100
-    EV_1 = x[48:72] / 100
-    EV_2 = x[72:96] / 100
-    EV_3 = x[96:120] / 100
-    EV_4 = x[120:144] / 100
+    EV_Q1 = x[48:72] / 100
+    EV_S1 = x[72:96] / 100
+    EV_2 = x[96:120] / 100
+    EV_3 = x[120:144] / 100
+    EV_4 = x[120:168] / 100
+
+    # 定义一个函数来将每个元素重复两次并扩展数组到48长度
+    def expand_array(arr):
+        return np.repeat(arr, 2)
+
+    # 应用扩展函数
+    price_buy_expanded = expand_array(price_buy)
+    price_sell_expanded = expand_array(price_sell)
+    EV_Q1_expanded = expand_array(EV_Q1)
+    EV_S1_expanded = expand_array(EV_S1)
+    EV_2_expanded = expand_array(EV_2)
+    EV_3_expanded = expand_array(EV_3)
+    EV_4_expanded = expand_array(EV_4)
 
     #调用EVload
-    EVload = EVload(EV_1, EV_2, EV_3, EV_4, EV_penetration)
+    EVloadflow, EVloadmic = EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4) #这个是24小时的
 
     # 调用MGO函数
-    F1, Pnet_mic, Pnet, Psg = MGO(price_buy, price_sell, EVload) # Fdown是成本
+    F1, Pnet_mic, Pnet, Psg = MGO(price_buy, price_sell, EVloadmic) # Fdown是成本
 
     #调用潮流
-    F2 = powerflow(EVload, Pnet_mic, Pnet, Psg)
+    F2 = powerflow(EVloadflow, Pnet_mic, Pnet, Psg)
 
     return F1, F2
 

@@ -1,5 +1,3 @@
-import pandas as pd
-from docplex.mp.model import Model
 import numpy as np
 import matplotlib.pyplot as plt
 from gridinfo import (C_buy, C_sell, start_points, end_points, microgrid_id, EV_penetration, nodes, node_mapping,
@@ -17,14 +15,14 @@ class CommuterChargingChoiceCalculator:
         #self.work_charging_capacity = 200
 
     def calculate_home_charging_cost(self):
-        # 选择社区价格数组0-8和21-23中最高的6个数相加
-        night_prices = np.concatenate((self.home_prices[0:8], self.home_prices[21:24]))
+        # 选择社区价格数组0-8和20-23中最高的6个数相加
+        night_prices = np.concatenate((self.home_prices[0:8], self.home_prices[20:24]))
         highest_prices = np.sort(night_prices)[-6:]
         return np.sum(highest_prices)
 
     def calculate_private_charging_cost(self):
-        # 选择C_buy数组0-8小时之间最高的6个数相加
-        night_prices = C_buy[0:8]  # 不需要使用np.concatenate
+        # 选择社区价格数组0-8和20-23中最高的6个数相加
+        night_prices = np.concatenate((C_buy[0:8], C_buy[20:24]))  # 不需要使用np.concatenate
         highest_prices = np.sort(night_prices)[-6:]
         return np.sum(highest_prices)
 
@@ -110,9 +108,9 @@ class CommuterChargingChoiceCalculator:
         return choices
 
 
-class CommunityChargingManager:
-    def __init__(self, MG1, MGS1, MG2, MG3, MG4):
-        self.MG1 = MG1
+class ChargingManager:
+    def __init__(self, MGQ1, MGS1, MG2, MG3, MG4):
+        self.MGQ1 = MGQ1
         self.MGS1 = MGS1
         self.MG2 = MG2
         self.MG3 = MG3
@@ -120,9 +118,10 @@ class CommunityChargingManager:
         # 创建节点到索引的映射
         self.node_mapping = node_mapping
         # 初始化向量
-        self.charging_home = np.zeros(len(nodes)*2)
-        self.charging_work_quick = np.zeros(len(nodes)*2)
-        self.charging_work_slow = np.zeros(len(nodes)*2)
+        self.charging_home = np.zeros(len(nodes)*2) # 80
+        self.charging_work_slow = np.zeros(len(nodes)*2) #80
+        self.charging_work_quick_matrix = np.zeros(len(nodes)) #40
+
         # 初始化特殊点充电车辆数记录字典
         self.special_slow_charging_counts = {201: 0, 207: 0, 205: 0, 301: 0, 311: 0, 312: 0}
 
@@ -133,17 +132,17 @@ class CommunityChargingManager:
             home_price = self.MG2 if microgrid == 1 else self.MG3 if microgrid == 2 else self.MG4
 
             # 使用CommuterChargingChoiceCalculator计算选择
-            calculator = CommuterChargingChoiceCalculator(home_price, self.MG1, self.MGS1, self.MG2, self.MG3)
+            calculator = CommuterChargingChoiceCalculator(home_price, self.MGQ1, self.MGS1, self.MG2, self.MG3)
             choices = calculator.calculate_choices()
 
             # 根据映射更新向量
             idx = self.node_mapping[start_point]
             self.charging_home[idx] = choices['charging_at_home_private'] + choices['charging_at_home_public']
-            self.charging_work_quick[idx] += choices['charging_at_work_quick']
             # 更新慢充向量
             self.charging_work_slow[idx] += (choices['charging_at_work_slow'] +
                                              choices['charging_at_work_slow1'] +
                                              choices['charging_at_work_slow2'])
+
             # 特殊处理慢充1和慢充2
             special_slow1 = choices['charging_at_work_slow1'] / 3
             special_slow2 = choices['charging_at_work_slow2'] / 3
@@ -154,38 +153,81 @@ class CommunityChargingManager:
                 self.special_slow_charging_counts[point] += special_slow2
                 self.charging_work_slow[self.node_mapping[point]] += special_slow2
 
+            # 给end_points的每个点的'charging_at_work_quick'均分加上
+            quick_share = choices['charging_at_work_quick'] / len(end_points)
+            for end_point in end_points:
+                self.charging_work_quick_matrix[self.node_mapping[end_point]] += quick_share
+
     def calculate_vehicle_distribution(self):
         # 初始化结果矩阵
         self.charging_home_matrix = np.zeros((80, 48))
-        self.charging_work_quick_matrix = np.zeros((80, 48))
         self.charging_work_slow_matrix = np.zeros((80, 48))
+        self.charging_work_quick_matrix = np.zeros((40, 48))
 
         # 用初始状态向量乘以每个转移矩阵
         for t, matrix in transition_matrices.items():
             idx = int(t * 2)  # 将时间转换为索引
             self.charging_home_matrix[:, idx] = np.dot(matrix, self.charging_home)
-            self.charging_work_quick_matrix[:, idx] = np.dot(matrix, self.charging_work_quick)
             self.charging_work_slow_matrix[:, idx] = np.dot(matrix, self.charging_work_slow)
 
         # 截取前40列
         self.charging_home_matrix = self.charging_home_matrix[:, :40]
-        self.charging_work_quick_matrix = self.charging_work_quick_matrix[:, :40]
         self.charging_work_slow_matrix = self.charging_work_slow_matrix[:, :40]
 
         # 根据special_slow_charging_counts修正self.charging_work_slow_matrix和self.charging_home_matrix
+        # 计算特殊慢充的比例
+        special_slow_charging_ratios = {}
         for node, count in self.special_slow_charging_counts.items():
+            # 假设EV_penetration已经提供每个节点的车辆渗透率
             special_slow_charging_ratio = count / (EV_penetration[node] * 28 / 6)
-            node_idx = self.node_mapping[node]
+            special_slow_charging_ratios[node] = special_slow_charging_ratio
 
-            # 修正self.charging_work_slow_matrix
-            self.charging_work_slow_matrix[node_idx, :] *= (1 - special_slow_charging_ratio)
+        # 修正self.charging_work_slow_matrix 和 self.charging_home_matrix
+        adjustment_nodes = {
+            201: [102],
+            207: [103],
+            312: [106],
+            205: [104],
+            301: [104],
+            311: [104]
+        }
 
-            # 修正self.charging_home_matrix
-            self.charging_home_matrix[node_idx, :] += self.charging_work_slow_matrix[node_idx,
-                                                      :] * special_slow_charging_ratio
+        for adjust_node, source_nodes in adjustment_nodes.items():
+            for source_node in source_nodes:
+                source_idx = self.node_mapping[source_node]
+                adjust_idx = self.node_mapping[adjust_node]
+
+                # 计算减少的部分
+                reduced_amount = self.charging_work_slow_matrix[source_idx, :] * special_slow_charging_ratios[
+                    adjust_node]
+
+                # 减少工作慢充中的相应部分
+                self.charging_work_slow_matrix[source_idx, :] -= reduced_amount
+
+                # 将减少的部分加到家充对应的adjust_node
+                self.charging_home_matrix[adjust_idx, :] += reduced_amount
+
+        # 找到MGQ1中9-19点间最小的值和与最小值相差小于等于0.1的时间点
+        min_price = np.min(self.MGQ1[9:20])
+        selected_hours = [i for i, price in enumerate(self.MGQ1[9:20], start=9) if price <= min_price + 0.1]
+
+        # 转换选定的小时到半小时步长的索引，并且为每个小时选取两个半小时索引
+        selected_indices = []
+        for hour in selected_hours:
+            selected_indices.extend([hour * 2, hour * 2 + 1])
+
+        # 对于每个end_points对应的列，将end_points对应的快充数量均分到选定的时间点
+        for end_point in end_points:
+            idx = self.node_mapping[end_point]
+            num_quick_charging = self.charging_work_quick_matrix[idx]  # 快充数量
+            num_slots = len(selected_hours)
+
+            # 分配快充数量到选定时间点
+            for time_idx in selected_indices:
+                self.charging_work_quick_matrix[idx, time_idx] = num_quick_charging / num_slots
 
         # 输出三个矩阵
-        return self.charging_home_matrix, self.charging_work_quick_matrix, self.charging_work_slow_matrix
+        return self.charging_home_matrix, self.charging_work_slow_matrix, self.charging_work_quick_matrix
 
 
 

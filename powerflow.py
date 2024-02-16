@@ -122,21 +122,14 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
         Vdrms = np.sqrt(np.mean(voltage_deviation ** 2))
         daily_vdrms_values.append(Vdrms)
 
-    # 将结果转换为NumPy数组以便进行进一步的分析
-    daily_vdrms_values = np.array(daily_vdrms_values)
-
-    # # 计算日均值
-    # daily_average = np.mean(daily_vdrms_values)
-    # # 计算最大值
-    # maximum_value = np.max(daily_vdrms_values)
-    # # 计算标准差
-    # standard_deviation = np.std(daily_vdrms_values)
-
-    # 设定阈值，计算超过阈值的时段比例
-    threshold = 0.05 #5%偏差
-    over_threshold_ratio = np.sum(daily_vdrms_values > threshold) / len(daily_vdrms_values)
-
-    return over_threshold_ratio
+    # # 将结果转换为NumPy数组以便进行进一步的分析
+    # daily_vdrms_values = np.array(daily_vdrms_values)
+    #
+    # # 设定阈值，计算超过阈值的时段比例
+    # threshold = 0.05 #5%偏差
+    # over_threshold_ratio = np.sum(daily_vdrms_values > threshold) / len(daily_vdrms_values)
+    #
+    # return over_threshold_ratio
 
 
     # # 遍历branch中的每条连接

@@ -33,9 +33,9 @@ def read_and_multiply_matrices(input_dir, output_dir, step=10):
 
 
 #示例用法
-# input_dir = 'TM'  # 这是包含每三分钟转移矩阵CSV文件的目录路径
-# output_dir = 'TMhalfhour'  # 这是结果将被保存的目录路径
-# read_and_multiply_matrices(input_dir, output_dir)
+input_dir = 'TM'  # 这是包含每三分钟转移矩阵CSV文件的目录路径
+output_dir = 'TMhalfhour'  # 这是结果将被保存的目录路径
+read_and_multiply_matrices(input_dir, output_dir)
 
 import os
 import numpy as np

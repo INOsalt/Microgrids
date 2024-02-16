@@ -7,16 +7,11 @@ from scipy.stats import norm
 import pandas as pd
 import os
 from scipy.stats import truncnorm
+from gridinfo import nodes, node_mapping, end_points, start_points
 
 # 路网结构
 num_nodes = 40
 LJ = np.zeros((num_nodes, num_nodes))  # 初始化邻接矩阵
-# 定义节点列表
-nodes = [101, 102, 103, 104, 105, 106, 201, 202, 203, 204, 205, 206, 207, 208, 209, 301, 302, 303, 304, 305, 306,
-         307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 401, 402, 403, 404, 405, 406, 407]
-
-# 创建一个从节点编号到索引的映射
-node_mapping = {node: index for index, node in enumerate(nodes)}
 
 # 使用映射来创建边列表
 edges = [
@@ -248,10 +243,10 @@ class Markov:
             if start in self.start_mapping:
                 # 将每个起点的充电频率平均值存储到 charging_frequency 数组中
                 self.charging_frequency[start] = total_charging_frequency / len(self.end_mapping)
-        # np.set_printoptions(threshold=np.inf)
+        np.set_printoptions(threshold=np.inf)
         # print(len(self.charging_frequency))
-        # output_file_path = "charging_frequency_output.txt"
-        # np.savetxt(output_file_path, self.charging_frequency)
+        output_file_path = "charging_frequency_output.txt"
+        np.savetxt(output_file_path, self.charging_frequency)
 
 
         # 返程时间分布
@@ -554,11 +549,6 @@ class Markov:
 #     plt.axis('off')  # 关闭坐标轴
 #     plt.show()
 
-
-start_points = [202, 203, 204, 205, 206, 208, 209, 302, 303, 304, 305, 306, 307, 308, 309, 310, 313, 314, 315, 316, 317,
-                318, 401, 402, 403, 404, 405, 406, 407]
-end_points = [101, 102, 103, 104, 105, 106]
-
 # 初始化所有车辆都停泊在起点，没有车辆在移动状态
 initial_state = np.zeros(2 * num_nodes)
 starts = [node_mapping[point] for point in start_points]
@@ -572,7 +562,7 @@ markov = Markov(G, labels, start_points, end_points)
 # markov.update_graph_weights(8)
 # markov.normal_distribution()
 # markov.time_possibility(8)
-#markov.run_simulation(initial_state)
+markov.run_simulation(initial_state)
 
 # 更新权重并生成高峰期和非高峰期图
 # # 可视化高峰期图
@@ -581,7 +571,6 @@ markov = Markov(G, labels, start_points, end_points)
 # # 可视化非高峰期图
 # visualize_graph(markov.G_offpeak, "Off-Peak Traffic Graph Visualization")
 
-end_points = [101, 102, 103, 104, 105, 106]  # 终点列表
 mapped_end_points = [node_mapping[point] for point in end_points]  # 使用映射后的终点
 
 direct_edges = set()  # 直接相连的边
