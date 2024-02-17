@@ -92,7 +92,7 @@ class EVChargingOptimizer:
                 net_power = charging_power - discharging_power
 
                 # 将时间段和净功率添加到字典中
-                net_power_per_half_hour[t] = net_power
+                net_power_per_half_hour.append(net_power)
 
             return net_power_per_half_hour
         else:
@@ -186,7 +186,7 @@ class EVChargingOptimizer:
                 net_power = (charging_power - discharging_power +
                              fast_vehicles_distribution[t] * self.P_quick / self.efficiency) #快充
                 # 将时间段和净功率添加到字典中
-                net_power_per_half_hour[t] = net_power
+                net_power_per_half_hour.append(net_power)
 
             return net_power_per_half_hour
         else:
@@ -257,7 +257,7 @@ def calculate_arriving_vehicles(charging_distribution, leaving_vehicles):
 
 def calculate_P_basic():
     P_basic_dict = {}
-    for hour in range(1, 25):
+    for hour in range(24):
         load_matrix = nodedata_dict[hour]
         pv_matrix = pv_capacity_dict.get(hour, np.zeros_like(load_matrix))
         wt_matrix = wt_capacity_dict.get(hour, np.zeros_like(load_matrix))
@@ -265,18 +265,31 @@ def calculate_P_basic():
         for node in nodes:
             node_index = np.where(load_matrix[:, 0] == node)[0][0]
             load = load_matrix[node_index, 1]
-            pv = pv_matrix[node_index, 1] if hour in pv_capacity_dict else 0
-            wt = wt_matrix[node_index, 1] if hour in wt_capacity_dict else 0
+
+            # 对于pv和wt，检查节点是否在对应的矩阵中
+            if node in pv_matrix[:, 0]:
+                pv_index = np.where(pv_matrix[:, 0] == node)[0][0]
+                pv = pv_matrix[pv_index, 1]
+            else:
+                pv = 0
+
+            if node in wt_matrix[:, 0]:
+                wt_index = np.where(wt_matrix[:, 0] == node)[0][0]
+                wt = wt_matrix[wt_index, 1]
+            else:
+                wt = 0
 
             net_load = load - (pv + wt)
+
             if node not in P_basic_dict:
-                P_basic_dict[node] = [net_load] * 2  # Each hour split into two half-hour periods
+                P_basic_dict[node] = [net_load] * 2
             else:
                 P_basic_dict[node].extend([net_load] * 2)
 
     return P_basic_dict
 
 def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
+
     # 初始化存储每半小时所有节点EV负荷的字典
     node_EV_load = {time: np.zeros(len(nodes)) for time in range(48)}
     # 初始化存储每个微电网48步长EV负荷的字典
@@ -307,25 +320,38 @@ def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
     #优化实例
     optimize = EVChargingOptimizer()
     for node in nodes:
-        if 100 <= node < 199:  # Office节点
-            P_basic = P_basic_dict[node]
-            ev_load_vector = optimize.optimizeOfficeChargingPattern(
-                slow_vehicles_distribution=work_slow_charging_distribution[node],
-                slow_arriving_vehicles=work_slow_arriving[node],
-                slow_leaving_vehicles=work_slow_leaving[node],
-                fast_vehicles_distribution=work_quick_charging_distribution.get(node, []),
-                office_P_BASIC=P_basic
-            )
-        else:  # 社区节点
-            P_basic = P_basic_dict[node]
-            ev_load_vector = optimize.optimizeCommunityChargingPattern(
-                community_vehicles_distribution=home_charging_distribution[node],
-                community_arriving_vehicles=home_arriving[node],
-                community_leaving_vehicles=home_leaving[node],
-                community_P_BASIC=P_basic
-            )
         # 获取当前节点的索引
         node_idx = node_mapping[node]
+
+        # Office节点
+        if 100 <= node < 199:
+            P_basic = P_basic_dict[node]
+            if max(work_slow_charging_distribution.get(node, [0])) == 0 and max(
+                    work_quick_charging_distribution.get(node, [0])) == 0:
+                # 如果没有慢充也没有快充车辆，跳过优化步骤
+                ev_load_vector = np.zeros(48)  # 48个半小时时段
+            else:
+                # 进行优化
+                ev_load_vector = optimize.optimizeOfficeChargingPattern(
+                    slow_vehicles_distribution=work_slow_charging_distribution.get(node, []),
+                    slow_arriving_vehicles=work_slow_arriving.get(node, []),
+                    slow_leaving_vehicles=work_slow_leaving.get(node, []),
+                    fast_vehicles_distribution=work_quick_charging_distribution.get(node, []),
+                    office_P_BASIC=P_basic
+                )
+        else:  # 社区节点
+            P_basic = P_basic_dict[node]
+            if max(home_charging_distribution.get(node, [0])) == 0:
+                # 如果没有社区车辆，跳过优化步骤
+                ev_load_vector = np.zeros(48)  # 48个半小时时段
+            else:
+                # 进行优化
+                ev_load_vector = optimize.optimizeCommunityChargingPattern(
+                    community_vehicles_distribution=home_charging_distribution.get(node, []),
+                    community_arriving_vehicles=home_arriving.get(node, []),
+                    community_leaving_vehicles=home_leaving.get(node, []),
+                    community_P_BASIC=P_basic
+                )
 
         # 使用该节点的EV负荷更新node_EV_load字典中的向量
         for t in range(48):
@@ -350,7 +376,7 @@ def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
         if mic_idx is not None:
             for t in range(48):
                 mic_EV_load[mic_idx][t] += node_EV_load[t][node_idx]
-
+    print("EV计算结束")
     return node_EV_load, mic_EV_load
 
 

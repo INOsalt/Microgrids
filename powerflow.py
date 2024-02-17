@@ -6,6 +6,8 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
 
     # 初始化存储一天中每小时电压偏差均方根值的列表
     daily_vdrms_values = []
+    # 初始化总损耗为0
+    total_losses = 0
 
     for i in range(48):  # 修正循环，从0到47
         # 获取当前小时的电动汽车负荷
@@ -113,14 +115,18 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
                     bus['Pd'][idx] += power
 
         a = PowerFlow(branch, gen, bus)
-        voltage_pu = a.RunPF()
-        # 期望的电压标幺值
-        expected_voltage_pu = 1.0
-        # 计算电压偏差
-        voltage_deviation = voltage_pu - expected_voltage_pu
-        # 计算每小时电压偏差的均方根值并存储
-        Vdrms = np.sqrt(np.mean(voltage_deviation ** 2))
-        daily_vdrms_values.append(Vdrms)
+        losses, voltage_pu = a.RunPF()
+        # 累加当前的损耗
+        total_losses += losses
+        # # 期望的电压标幺值
+        # expected_voltage_pu = 1.0
+        # # 计算电压偏差
+        # voltage_deviation = voltage_pu - expected_voltage_pu
+        # # 计算每小时电压偏差的均方根值并存储
+        # Vdrms = np.sqrt(np.mean(voltage_deviation ** 2))
+        # daily_vdrms_values.append(Vdrms)
+    print("潮流计算结束")
+    return total_losses
 
     # # 将结果转换为NumPy数组以便进行进一步的分析
     # daily_vdrms_values = np.array(daily_vdrms_values)

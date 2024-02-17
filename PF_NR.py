@@ -265,13 +265,13 @@ class PowerFlow():
             # 检查收敛条件
             if np.max(np.abs(Fx)) < el:
                 losses = self._ProcessRes(S_Gen, S_load, typekey)  # 计算网损
-                return losses  # 返回网损
+                return losses, self.V_nr  # 返回网损
 
             if lnum > lmax:
                 print("[warn]: Please Mind! The N-R did not converge!!")
                 break  # 未能收敛，跳出循环
 
-        return None #self.V_nr
+        return None, self.V_nr
 
 
 def Res2Excel_bus(PF, filename, sheetname):

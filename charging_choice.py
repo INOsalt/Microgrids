@@ -181,15 +181,15 @@ class ChargingManager:
 
     def calculate_vehicle_distribution(self):
         # 初始化结果矩阵
-        self.charging_home_matrix = np.zeros((80, 48))
-        self.charging_work_slow_matrix = np.zeros((80, 48))
-        self.charging_work_quick_matrix = np.zeros((40, 48))
+        self.charging_home_matrix = np.zeros((48, 80))
+        self.charging_work_slow_matrix = np.zeros((48, 80))
+        self.charging_work_quick_matrix = np.zeros((48, 40))
 
         # 用初始状态向量乘以每个转移矩阵
         for t, matrix in transition_matrices.items():
             idx = int(t * 2)  # 将时间转换为索引
-            self.charging_home_matrix[:, idx] = np.dot(matrix, self.charging_home)
-            self.charging_work_slow_matrix[:, idx] = np.dot(matrix, self.charging_work_slow)
+            self.charging_home_matrix[idx, :] = np.dot(matrix, self.charging_home)
+            self.charging_work_slow_matrix[idx, :] = np.dot(matrix, self.charging_work_slow)
 
         # 截取前40列
         self.charging_home_matrix = self.charging_home_matrix[:, :40]

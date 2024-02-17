@@ -1,4 +1,4 @@
-from gridinfo import C_buy, C_sell
+from gridinfo import C_buy, C_sell, expand_array
 import numpy as np
 
 
@@ -33,8 +33,8 @@ class OptimizationMicrogrid:
         # 初始化微电网实体、数量、购电和售电价格等参数
         self.microgrid = microgrid
         self.num_microgrid = num_microgrid
-        self.C_buy = C_buy
-        self.C_sell = C_sell
+        self.C_buy = expand_array(C_buy)
+        self.C_sell =expand_array(C_sell)
         self.C_buymic = C_buymic  # 购电价格
         self.C_sellmic = C_sellmic  # 售电价格
         self.model = model #Model(name="Microgrid Optimization")  # 创建 DOcplex 模型
