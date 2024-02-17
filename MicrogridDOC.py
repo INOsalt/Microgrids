@@ -43,59 +43,59 @@ class OptimizationMicrogrid:
         # 创建燃气机出力变量
         self.Psg = np.array([self.model.continuous_var(lb=0, ub=self.microgrid.POWER_SG,
                                                        name=f"Psg_{self.microgrid.id}_{i}")
-                             for i in range(24)]) if self.microgrid.C_sg is not None else None
+                             for i in range(48)]) if self.microgrid.C_sg is not None else None
 
         # # 创建柴油出力变量
-        # self.Pde = np.array([self.model.continuous_var(lb=-0, ub=200, name=f"Pde_{self.microgrid.id}_{i}") for i in range(24)]) if self.microgrid.C_de is not None else None
+        # self.Pde = np.array([self.model.continuous_var(lb=-0, ub=200, name=f"Pde_{self.microgrid.id}_{i}") for i in range(48)]) if self.microgrid.C_de is not None else None
 
         # 创建 PV 出力变量
-        #self.Ppv = np.array([self.model.continuous_var(lb=0, ub=self.model.infinity, name=f"Ppv_{self.microgrid.id}_{i}") for i in range(24)]) if self.microgrid.P_pv is not None else None
+        #self.Ppv = np.array([self.model.continuous_var(lb=0, ub=self.model.infinity, name=f"Ppv_{self.microgrid.id}_{i}") for i in range(48)]) if self.microgrid.P_pv is not None else None
 
         # 创建 WT 出力变量
-        #self.Pwt = np.array([self.model.continuous_var(lb=0, ub=self.model.infinity, name=f"Pwt_{self.microgrid.id}_{i}") for i in range(24)]) if self.microgrid.P_wt is not None else None
+        #self.Pwt = np.array([self.model.continuous_var(lb=0, ub=self.model.infinity, name=f"Pwt_{self.microgrid.id}_{i}") for i in range(48)]) if self.microgrid.P_wt is not None else None
 
         # 创建蓄电池出力变量
         self.Pbat = np.array([self.model.continuous_var(lb=-self.model.infinity, ub=self.model.infinity,
-                                                        name=f"Pbat_{self.microgrid.id}_{i}") for i in range(24)])
+                                                        name=f"Pbat_{self.microgrid.id}_{i}") for i in range(48)])
 
         # 创建充放电变量
         self.Pcha = np.array([self.model.continuous_var(lb=0, ub=self.model.infinity,
-                                                        name=f"Pcha_{self.microgrid.id}_{i}") for i in range(24)])
+                                                        name=f"Pcha_{self.microgrid.id}_{i}") for i in range(48)])
         self.Pdis = np.array([self.model.continuous_var(lb=-self.model.infinity, ub=0,
-                                                        name=f"Pdis_{self.microgrid.id}_{i}") for i in range(24)])
+                                                        name=f"Pdis_{self.microgrid.id}_{i}") for i in range(48)])
 
         # 创建充放电状态标志变量
-        self.Temp_cha = np.array([self.model.binary_var(name=f"Temp_cha_{self.microgrid.id}_{i}") for i in range(24)])
-        self.Temp_dis = np.array([self.model.binary_var(name=f"Temp_dis_{self.microgrid.id}_{i}") for i in range(24)])
-        self.Temp_static = np.array([self.model.binary_var(name=f"Temp_static_{self.microgrid.id}_{i}") for i in range(24)])
+        self.Temp_cha = np.array([self.model.binary_var(name=f"Temp_cha_{self.microgrid.id}_{i}") for i in range(48)])
+        self.Temp_dis = np.array([self.model.binary_var(name=f"Temp_dis_{self.microgrid.id}_{i}") for i in range(48)])
+        self.Temp_static = np.array([self.model.binary_var(name=f"Temp_static_{self.microgrid.id}_{i}") for i in range(48)])
 
         # 创建电网交换功率变量
         self.Pnet = np.array([self.model.continuous_var(lb=-self.microgrid.POWER, ub=self.microgrid.POWER,
-                                                        name=f"Pnet_{self.microgrid.id}_{i}") for i in range(24)])
+                                                        name=f"Pnet_{self.microgrid.id}_{i}") for i in range(48)])
 
         # 创建电网购售电量变量
         self.Pbuy = np.array([self.model.continuous_var(lb=0, ub=self.microgrid.POWER,
-                                                        name=f"Pbuy_{self.microgrid.id}_{i}") for i in range(24)])
+                                                        name=f"Pbuy_{self.microgrid.id}_{i}") for i in range(48)])
         self.Psell = np.array([self.model.continuous_var(lb=-self.microgrid.POWER, ub=0,
-                                                         name=f"Psell_{self.microgrid.id}_{i}") for i in range(24)])
+                                                         name=f"Psell_{self.microgrid.id}_{i}") for i in range(48)])
 
         # 创建购售电标志变量
-        self.Temp_net = np.array([self.model.binary_var(name=f"Temp_net_{self.microgrid.id}_{i}") for i in range(24)])
+        self.Temp_net = np.array([self.model.binary_var(name=f"Temp_net_{self.microgrid.id}_{i}") for i in range(48)])
 
 
         # 创建微电网群交易相关变量
         if self.num_microgrid > 1:
             self.Pnetmic = np.array([[self.model.continuous_var(lb=-self.model.infinity, ub=self.model.infinity,
                                                                 name=f"Pnetmic_{self.microgrid.id}_{j}_{i}")
-                                      for i in range(24)] for j in range(self.num_microgrid) if j != self.microgrid.id])
+                                      for i in range(48)] for j in range(self.num_microgrid) if j != self.microgrid.id])
             self.Pbuymic = np.array([[self.model.continuous_var(lb=0, ub=self.model.infinity,
                                                                 name=f"Pbuymic_{self.microgrid.id}_{j}_{i}")
-                                      for i in range(24)] for j in range(self.num_microgrid) if j != self.microgrid.id])
+                                      for i in range(48)] for j in range(self.num_microgrid) if j != self.microgrid.id])
             self.Psellmic = np.array([[self.model.continuous_var(lb=-self.model.infinity, ub=0,
                                                                  name=f"Psellmic_{self.microgrid.id}_{j}_{i}")
-                                       for i in range(24)] for j in range(self.num_microgrid) if j != self.microgrid.id])
+                                       for i in range(48)] for j in range(self.num_microgrid) if j != self.microgrid.id])
             self.Tempmic = np.array([[self.model.binary_var(name=f"Tempmic_{self.microgrid.id}_{j}_{i}")
-                                      for i in range(24)] for j in range(self.num_microgrid) if j != self.microgrid.id])
+                                      for i in range(48)] for j in range(self.num_microgrid) if j != self.microgrid.id])
 
         else:
             self.Pnetmic = self.Pbuymic = self.Psellmic = None
@@ -108,7 +108,7 @@ class OptimizationMicrogrid:
     # 主网功率交换约束
     def add_constraints(self):
         # 添加主网功率交换约束
-        for k in range(24):
+        for k in range(48):
             self.model.add_constraint(self.Pnet[k] <= self.microgrid.POWER)
             self.model.add_constraint(self.Pnet[k] >= -self.microgrid.POWER)
 
@@ -117,7 +117,7 @@ class OptimizationMicrogrid:
             # 微电网间的功率交换约束
             for l in range(self.num_microgrid):
                 if l != self.microgrid.id:
-                    for k in range(24):
+                    for k in range(48):
                         var_name = f"Pnetmic_{self.microgrid.id}_{l}_{k}"
                         pnetmic_var = self.model.get_var_by_name(var_name)
 
@@ -126,18 +126,18 @@ class OptimizationMicrogrid:
                         self.model.add_constraint(pnetmic_var >= -self.microgrid.POWER_MIC[l])
         # 添加燃气机和柴油机约束
         if self.microgrid.C_sg is not None:
-            for k in range(24):
+            for k in range(48):
                 self.model.add_constraint(self.Psg[k] <= self.microgrid.POWER_SG)
                 self.model.add_constraint(self.Psg[k] >= 0)
 
         # 添加风能和太阳能约束
         # if self.microgrid.P_wt is not None:
-        #     for k in range(24):
+        #     for k in range(48):
         #         self.model.add_constraint(self.Pwt[k] <= self.microgrid.P_wt[k])
         #         self.model.add_constraint(self.Pwt[k] >= 0)
         #
         # if self.microgrid.P_pv is not None:
-        #     for k in range(24):
+        #     for k in range(48):
         #         self.model.add_constraint(self.Ppv[k] <= self.microgrid.P_pv[k])
         #         self.model.add_constraint(self.Ppv[k] >= 0)
 
@@ -145,7 +145,7 @@ class OptimizationMicrogrid:
         tolerance = 0.00001
 
         # 添加功率平衡约束，允许一定的容差
-        for k in range(24):
+        for k in range(48):
             power_balance_import = self.Pnet[k] - self.Pbat[k]
             if self.microgrid.P_pv is not None:
                 power_balance_import += self.microgrid.P_pv[k]
@@ -170,7 +170,7 @@ class OptimizationMicrogrid:
 
 
         # 添加购售电约束
-        for k in range(24):
+        for k in range(48):
             # 当 Temp_net[k] 为 1 时，Pnet[k] 必须大于等于 0，且 Pbuy = Pnet，Psell = 0
             self.model.add_indicator(self.Temp_net[k], self.Pnet[k] >= 0, 1)
             self.model.add_indicator(self.Temp_net[k], self.Pbuy[k] == self.Pnet[k], 1)
@@ -182,7 +182,7 @@ class OptimizationMicrogrid:
             self.model.add_indicator(self.Temp_net[k], self.Pbuy[k] == 0, 0)
 
         #添加微电网间交易的指示约束
-        for k in range(24):
+        for k in range(48):
             for j in range(self.num_microgrid):
                 if j != self.microgrid.id:
                     # 获取变量
@@ -208,7 +208,7 @@ class OptimizationMicrogrid:
                     self.model.add_indicator(tempmic_var, pbuymic_var == 0, 0)
 
         # 添加电池充放电约束
-        for k in range(24):
+        for k in range(48):
             self.model.add_constraint(self.Pbat[k] <= self.microgrid.pcs)
             self.model.add_constraint(self.Pbat[k] >= -self.microgrid.pcs)
 
@@ -239,7 +239,7 @@ class OptimizationMicrogrid:
         initial_soc = self.microgrid.soc0 * self.microgrid.ebattery  # 初始SOC转换为实际电量
 
         # 添加SOC更新和上下限约束
-        for k in range(1, 24):
+        for k in range(1, 48):
             # 累积到当前时间步的电池充放电总和
             cumulative_soc_change = initial_soc + sum(self.Pbat[i] for i in range(k))
 
@@ -248,7 +248,7 @@ class OptimizationMicrogrid:
             self.model.add_constraint(cumulative_soc_change >= self.microgrid.socmin * self.microgrid.ebattery)
 
         # 确保第24小时结束时的SOC与初始SOC相等
-        final_soc = initial_soc + sum(self.Pbat[i] for i in range(24))
+        final_soc = initial_soc + sum(self.Pbat[i] for i in range(48))
         self.model.add_constraint(final_soc == initial_soc)
 
 
@@ -260,23 +260,23 @@ class OptimizationMicrogrid:
 
         # 添加柴油轮机成本
         if self.microgrid.C_sg is not None:
-            for k in range(24):
+            for k in range(48):
                 objective_expr += self.Psg[k] * self.microgrid.C_sg
 
         # 添加储能成本
-        for k in range(24):
+        for k in range(48):
             objective_expr += self.Pcha[k] * 0.339  # 假设储能成本为0.339
             objective_expr -= self.Pdis[k] * 0.339
 
         # 添加外电网购售成本
-        for k in range(24):
+        for k in range(48):
             objective_expr += self.Pbuy[k] * self.C_buy[k]
             objective_expr += self.Psell[k] * self.C_sell[k]
 
         # 添加微电网购电成本
         # 如果有多于一个微电网
         if self.num_microgrid > 1:
-            for k in range(24):
+            for k in range(48):
                 for l in range(self.num_microgrid):
                     if l != self.microgrid.id:
                         pbuymic_var_name = f"Pbuymic_{self.microgrid.id}_{l}_{k}"
@@ -291,11 +291,11 @@ class OptimizationMicrogrid:
 
         # # 弃电惩罚
         # if self.microgrid.P_pv is not None:
-        #     for k in range(24):
+        #     for k in range(48):
         #         curtail_Ppv = self.model.max(0, self.microgrid.P_pv[k] - self.Ppv[k])
         #         objective_expr += curtail_Ppv * self.microgrid.C_re  # 光伏弃电惩罚
         # if self.microgrid.P_wt is not None:
-        #     for k in range(24):
+        #     for k in range(48):
         #         curtail_Pwt = self.model.max(0, self.microgrid.P_wt[k] - self.Pwt[k])
         #         objective_expr += curtail_Pwt * self.microgrid.C_re  # 风电弃电惩罚
 

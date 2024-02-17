@@ -279,8 +279,8 @@ def calculate_P_basic():
 def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
     # 初始化存储每半小时所有节点EV负荷的字典
     node_EV_load = {time: np.zeros(len(nodes)) for time in range(48)}
-    # 初始化存储每半小时微电网EV负荷的字典
-    mic_EV_load = {time: np.zeros(4) for time in range(48)}  # 4个微电网
+    # 初始化存储每个微电网48步长EV负荷的字典
+    mic_EV_load = {mic: np.zeros(48) for mic in range(4)}  # 4个微电网
 
     # 充电选择实例
     EV_choice = ChargingManager(EV_Q1, EV_S1, EV_2, EV_3, EV_4)
@@ -296,7 +296,7 @@ def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
     work_slow_charging_distribution, work_slow_leaving, work_slow_arriving\
         = calculate_arriving_vehicles(charging_distribution_work_slow, leaving_vehicles_work_slow)
     # 家慢充
-    leaving_vehicles_home = calculate_leaving_vehicles(charging_distribution_work_slow)
+    leaving_vehicles_home = calculate_leaving_vehicles(charging_distribution_home)
     home_charging_distribution, home_leaving, home_arriving \
         = calculate_arriving_vehicles(charging_distribution_home, leaving_vehicles_home)
     # 工作快充
@@ -307,7 +307,7 @@ def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
     #优化实例
     optimize = EVChargingOptimizer()
     for node in nodes:
-        if 100 <= node <= 199:  # Office节点
+        if 100 <= node < 199:  # Office节点
             P_basic = P_basic_dict[node]
             ev_load_vector = optimize.optimizeOfficeChargingPattern(
                 slow_vehicles_distribution=work_slow_charging_distribution[node],
@@ -331,20 +331,25 @@ def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
         for t in range(48):
             node_EV_load[t][node_idx] = ev_load_vector[t]
 
-    # 对每个时间段，按照节点范围汇总微电网的EV负荷
-    for t in range(48):
-        for node in nodes:
-            # 获取当前节点的索引
-            node_idx = node_mapping[node]
-            # 根据节点范围，更新对应微电网的负荷
-            if 100 <= node <= 199:
-                mic_EV_load[t][0] += node_EV_load[t][node_idx]
-            elif 200 <= node <= 299:
-                mic_EV_load[t][1] += node_EV_load[t][node_idx]
-            elif 300 <= node <= 399:
-                mic_EV_load[t][2] += node_EV_load[t][node_idx]
-            elif 400 <= node <= 499:
-                mic_EV_load[t][3] += node_EV_load[t][node_idx]
+    # 对每个节点，按照节点范围汇总微电网的EV负荷
+    for node in nodes:
+        # 获取当前节点的索引
+        node_idx = node_mapping[node]
+        # 确定当前节点属于哪个微电网
+        mic_idx = None
+        if 100 <= node <= 199:
+            mic_idx = 0
+        elif 200 <= node <= 299:
+            mic_idx = 1
+        elif 300 <= node <= 399:
+            mic_idx = 2
+        elif 400 <= node <= 499:
+            mic_idx = 3
+
+        # 如果节点属于某个微电网，更新对应微电网的负荷
+        if mic_idx is not None:
+            for t in range(48):
+                mic_EV_load[mic_idx][t] += node_EV_load[t][node_idx]
 
     return node_EV_load, mic_EV_load
 

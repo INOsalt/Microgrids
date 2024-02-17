@@ -3,7 +3,7 @@ from docplex.mp.model import Model
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from gridinfo import microgrid_pv, microgrid_wt, microgrid_load_dict, C_buy, C_sell
+from gridinfo import microgrid_pv, microgrid_wt, microgrid_load_dict, C_buy, C_sell, expand_array
 
 #整体优化============
 class TotalOptimizationManager:
@@ -296,7 +296,8 @@ def MGO(C_buymic, C_sellmic, EVload):
     load_1 = microgrid_load_dict[id1]
     P_wt_1 = microgrid_wt[id1]
     P_pv_1 = microgrid_pv[id1]
-
+    ev_load_1 = EVload[id1]
+    load_1 = ev_load_1 + load_1
 
     ebattery_1 = 300
     soc0_1 = 0.5
@@ -312,6 +313,8 @@ def MGO(C_buymic, C_sellmic, EVload):
     load_2 = microgrid_load_dict[id2]
     P_wt_2 = microgrid_wt[id2]
     P_pv_2 = microgrid_pv[id2]
+    ev_load_2 = EVload[id2]
+    load_2 = ev_load_2 + load_2
 
     ebattery_2 = 300  # 电池容量
     soc0_2 = 0.5  # 初始SOC
@@ -328,6 +331,8 @@ def MGO(C_buymic, C_sellmic, EVload):
     load_3 = microgrid_load_dict[id3]
     P_wt_3 = microgrid_wt[id3]
     P_pv_3 = microgrid_pv[id3]
+    ev_load_3 = EVload[id3]
+    load_3 = ev_load_3 + load_3
 
     ebattery_3 = 300  # 电池容量
     soc0_3 = 0.5  # 初始SOC
@@ -345,6 +350,8 @@ def MGO(C_buymic, C_sellmic, EVload):
     load_4 = microgrid_load_dict[id4]
     P_wt_4 = microgrid_wt[id4]
     P_pv_4 = microgrid_pv[id4]
+    ev_load_4 = EVload[id4]
+    load_4 = ev_load_4 + load_4
 
     ebattery_4 = 300  # 电池容量
     soc0_4 = 0.5  # 初始SOC
@@ -401,7 +408,7 @@ def MGO(C_buymic, C_sellmic, EVload):
     # for microgrid_id in range(num_microgrid):
     #     visualization.plot_microgrid_charts(microgrid_id)
     # #
-    return Fdown, pnetmic_values_by_hour, pnet_values_by_hour, psg_values_by_hour
+    return Fdown, pnetmic_values_by_hour, pnet_values_by_hour, psg_values_by_hour # 长度48
 
 
 

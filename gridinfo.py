@@ -43,7 +43,7 @@ for filename in os.listdir(folder_path):
     if filename.endswith('.csv'):
         # 构建完整的文件路径
         file_path = os.path.join(folder_path, filename)
-        matrix_df = pd.read_csv(file_path)
+        matrix_df = pd.read_csv(file_path, header=None)
         # 将DataFrame转换为NumPy数组
         matrix = matrix_df.to_numpy()
         #print(f"Matrix {filename} size: {matrix.shape}")#检查矩阵形状
@@ -60,6 +60,9 @@ C_sell = [0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
           0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
           0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453]
 
+# 定义一个函数来将每个元素重复两次并扩展数组到48长度
+def expand_array(arr):
+    return np.repeat(arr, 2)
 #=========潮流计算数据处理 牛拉法需要的格式=========================
 ## 读取branch数据的CSV文件
 branch_df = pd.read_csv('grid/branch_data.csv')

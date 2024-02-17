@@ -4,7 +4,7 @@ from EVloadDOC import EVload
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-from gridinfo import EV_penetration
+from gridinfo import EV_penetration, expand_array
 
 
 # 开始种群等基本定义
@@ -78,7 +78,7 @@ def obj_all(x, iter):
     :param x: 优化变量数组
     :return: 目标函数的计算结果
     """
-    print("下层迭代", iter)  # 打印当前迭代次数
+
     # 分割x以获得电价
     price_buy = x[0:24] / 100
     price_sell = x[24:48] / 100
@@ -88,24 +88,21 @@ def obj_all(x, iter):
     EV_3 = x[120:144] / 100
     EV_4 = x[120:168] / 100
 
-    # 定义一个函数来将每个元素重复两次并扩展数组到48长度
-    def expand_array(arr):
-        return np.repeat(arr, 2)
 
     # 应用扩展函数
     price_buy_expanded = expand_array(price_buy)
     price_sell_expanded = expand_array(price_sell)
-    EV_Q1_expanded = expand_array(EV_Q1)
-    EV_S1_expanded = expand_array(EV_S1)
-    EV_2_expanded = expand_array(EV_2)
-    EV_3_expanded = expand_array(EV_3)
-    EV_4_expanded = expand_array(EV_4)
+    # EV_Q1_expanded = expand_array(EV_Q1)
+    # EV_S1_expanded = expand_array(EV_S1)
+    # EV_2_expanded = expand_array(EV_2)
+    # EV_3_expanded = expand_array(EV_3)
+    # EV_4_expanded = expand_array(EV_4)
 
     #调用EVload
-    EVloadflow, EVloadmic = EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4) #这个是24小时的
+    EVloadflow, EVloadmic = EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4) # 输入是24小时的 输出是48
 
     # 调用MGO函数
-    F1, Pnet_mic, Pnet, Psg = MGO(price_buy, price_sell, EVloadmic) # Fdown是成本
+    F1, Pnet_mic, Pnet, Psg = MGO(price_buy_expanded, price_sell_expanded, EVloadmic) # Fdown是成本 输入输出都是48
 
     #调用潮流
     F2 = powerflow(EVloadflow, Pnet_mic, Pnet, Psg)

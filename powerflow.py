@@ -7,7 +7,7 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
     # 初始化存储一天中每小时电压偏差均方根值的列表
     daily_vdrms_values = []
 
-    for i in range(24):  # 修正循环，从0到23
+    for i in range(48):  # 修正循环，从0到47
         # 获取当前小时的电动汽车负荷
         Pev_i = EVload[i]
         # 更新bus字典中的Pd和Qd

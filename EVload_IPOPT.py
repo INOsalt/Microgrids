@@ -76,7 +76,7 @@ spaced_connection = {(2, 1), (2, 5), (10, 3), (26, 25), (12, 2), (7, 6), (12, 6)
                      (15, 3), (24, 15), (1, 4), (9, 10), (6, 12), (25, 3), (3, 5), (8, 12), (6, 1),
                      (26, 5), (28, 25), (2, 4)}
 
-def EV_load(price_1, price_2, price_3, price_4):
+def EV_load1(price_1, price_2, price_3, price_4):
     # 初始化Pyomo模型
     model = ConcreteModel()
     to_points = [7.5, 8, 8.5, 9, 9.5, 10, 10.5]  # 表示时间点的集合 7以前和初始保持一致

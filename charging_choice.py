@@ -120,7 +120,7 @@ class ChargingManager:
         # 初始化向量
         self.charging_home = np.zeros(len(nodes)*2) # 80
         self.charging_work_slow = np.zeros(len(nodes)*2) #80
-        self.charging_work_quick_matrix = np.zeros(len(nodes)) #40
+        self.charging_work_quick = np.zeros(len(nodes)) #40
 
         # 初始化特殊点充电车辆数记录字典
         self.special_slow_charging_counts = {201: 0, 207: 0, 205: 0, 301: 0, 311: 0, 312: 0}
@@ -144,19 +144,40 @@ class ChargingManager:
                                              choices['charging_at_work_slow2'])
 
             # 特殊处理慢充1和慢充2
-            special_slow1 = choices['charging_at_work_slow1'] / 3
-            special_slow2 = choices['charging_at_work_slow2'] / 3
-            for point in [201, 207, 205]:
-                self.special_slow_charging_counts[point] += special_slow1
-                self.charging_work_slow[self.node_mapping[point]] += special_slow1
-            for point in [301, 311, 312]:
-                self.special_slow_charging_counts[point] += special_slow2
-                self.charging_work_slow[self.node_mapping[point]] += special_slow2
+            special_slow1 = choices['charging_at_work_slow1']
+            special_slow2 = choices['charging_at_work_slow2']
+
+            if special_slow1 > 0 and special_slow2 > 0:
+                if special_slow1 > special_slow2:
+                    # special_slow1 大于 special_slow2 的情况
+                    for point in [201, 207, 205]:
+                        self.special_slow_charging_counts[point] += special_slow1 / 3
+                    self.special_slow_charging_counts[312] += special_slow2
+                    self.special_slow_charging_counts[301] += 0
+                    self.special_slow_charging_counts[311] += 0
+                    # 301, 311 是 0，不需要额外处理
+                else:
+                    # special_slow2 大于或等于 special_slow1 的情况
+                    for point in [201, 207]:
+                        self.special_slow_charging_counts[point] += special_slow1 / 2
+                    # 205 是 0，不需要额外处理
+                    self.special_slow_charging_counts[301] += special_slow2 / 4
+                    self.special_slow_charging_counts[311] += special_slow2 / 4
+                    self.special_slow_charging_counts[312] += special_slow2 / 2
+                    #self.charging_work_slow[self.node_mapping[312]] += special_slow2 / 2
+            else:
+                # 保持原始规则不变
+                for point in [201, 207, 205]:
+                    self.special_slow_charging_counts[point] += special_slow1 / 3
+                    self.charging_work_slow[self.node_mapping[point]] += special_slow1 / 3
+                self.special_slow_charging_counts[301] += special_slow2 / 4
+                self.special_slow_charging_counts[311] += special_slow2 / 4
+                self.special_slow_charging_counts[312] += special_slow2 / 2
 
             # 给end_points的每个点的'charging_at_work_quick'均分加上
             quick_share = choices['charging_at_work_quick'] / len(end_points)
             for end_point in end_points:
-                self.charging_work_quick_matrix[self.node_mapping[end_point]] += quick_share
+                self.charging_work_quick[self.node_mapping[end_point]] += quick_share
 
     def calculate_vehicle_distribution(self):
         # 初始化结果矩阵
@@ -178,8 +199,7 @@ class ChargingManager:
         # 计算特殊慢充的比例
         special_slow_charging_ratios = {}
         for node, count in self.special_slow_charging_counts.items():
-            # 假设EV_penetration已经提供每个节点的车辆渗透率
-            special_slow_charging_ratio = count / (EV_penetration[node] * 28 / 6)
+            special_slow_charging_ratio = count / (EV_penetration * 0.1 * 28 / 6)
             special_slow_charging_ratios[node] = special_slow_charging_ratio
 
         # 修正self.charging_work_slow_matrix 和 self.charging_home_matrix
@@ -219,7 +239,7 @@ class ChargingManager:
         # 对于每个end_points对应的列，将end_points对应的快充数量均分到选定的时间点
         for end_point in end_points:
             idx = self.node_mapping[end_point]
-            num_quick_charging = self.charging_work_quick_matrix[idx]  # 快充数量
+            num_quick_charging = self.charging_work_quick[idx]  # 快充数量
             num_slots = len(selected_hours)
 
             # 分配快充数量到选定时间点
