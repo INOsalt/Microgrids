@@ -34,7 +34,7 @@ class OptimizationMicrogrid:
         self.microgrid = microgrid
         self.num_microgrid = num_microgrid
         self.C_buy = expand_array(C_buy)
-        self.C_sell =expand_array(C_sell)
+        self.C_sell = expand_array(C_sell)
         self.C_buymic = C_buymic  # 购电价格
         self.C_sellmic = C_sellmic  # 售电价格
         self.model = model #Model(name="Microgrid Optimization")  # 创建 DOcplex 模型
@@ -44,9 +44,6 @@ class OptimizationMicrogrid:
         self.Psg = np.array([self.model.continuous_var(lb=0, ub=self.microgrid.POWER_SG,
                                                        name=f"Psg_{self.microgrid.id}_{i}")
                              for i in range(48)]) if self.microgrid.C_sg is not None else None
-
-        # # 创建柴油出力变量
-        # self.Pde = np.array([self.model.continuous_var(lb=-0, ub=200, name=f"Pde_{self.microgrid.id}_{i}") for i in range(48)]) if self.microgrid.C_de is not None else None
 
         # 创建 PV 出力变量
         #self.Ppv = np.array([self.model.continuous_var(lb=0, ub=self.model.infinity, name=f"Ppv_{self.microgrid.id}_{i}") for i in range(48)]) if self.microgrid.P_pv is not None else None

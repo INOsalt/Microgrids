@@ -8,106 +8,49 @@ from gridinfo import EV_penetration, expand_array
 import os
 
 
-# 开始种群等基本定义
+# 基本定义
 N = 3 # 初始种群个数
-d = 168 # 空间维数
+d = 144 # 空间维数
 ger = 50 # 最大迭代次数
 
-# 电网分时电价 买卖电价都小于主电网
-MG_buy = 100 * np.array([
-    [0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205, 0.2205,
-     0.5802, 0.5802, 0.9863, 0.9863, 0.5802, 0.5802, 0.9863, 0.9863,
-     0.9863, 0.9863, 0.9863, 0.5802, 0.5802, 0.5802, 0.5802, 0.5802],
-    [0.2] * 24
-])
-MG_sell = 100 * np.array([
-    [0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
-     0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453, 0.453,
-     0.453, 0.453, 0.453, 0.453, 0.453, 0.453],
-    [0.2] * 24
-])
+# 位置限制和速度限制
+# 固定随机数生成器的种子
+np.random.seed(42)
+# 生成位置限制的下限和上限
+plimit_lower = np.random.rand(d)  # 随机生成下限
+plimit_upper = plimit_lower + np.random.rand(d) * 0.5  # 在下限基础上加上一个正的偏移量，确保上限大于下限
 
-EVQ1 = 100 * np.array([
-    [2] * 24,
-    [0.2205] * 24
-])
-EVS1 = 100 * np.array([
-    [2] * 24,
-    [0.2205] * 24
-])
-EV2 = 100 * np.array([
-    [2] * 24,
-    [0.2205] * 24
-])
-EV3 = 100 * np.array([
-    [2] * 24,
-    [0.2205] * 24
-])
-EV4 = 100 * np.array([
-    [2] * 24,
-    [0.2205] * 24
-])
+# 将下限和上限合并为plimit数组
+plimit = np.vstack((plimit_lower, plimit_upper))
 
-# 位置限制
-plimit = np.hstack((MG_buy, MG_sell, EVQ1, EVS1, EV2, EV3, EV4))
-# 速度限制
-vlimit = np.array([1 + np.zeros(168), 1 + np.zeros(168)])  # 速度限制设为 -1 到 1
+vlimit = np.array([1 + np.zeros(d), 1 + np.zeros(d)])  # 速度限制设为 -1 到 1
 
-w = 0.8                          # 惯性权重
-c1 = 0.5                         # 自我学习因子
-c2 = 0.5                         # 群体学习因子
-
-# 计时开始
-import time
-start_time = time.time()
+w = 0.8  # 惯性权重
+c1 = 0.5  # 自我学习因子
+c2 = 0.5  # 群体学习因子
 
 # 初始化种群的位置和速度
 x = np.zeros((N, d))
 for i in range(d):
     x[:, i] = plimit[0, i] + (plimit[1, i] - plimit[0, i]) * np.random.rand(N)
 
-v = np.random.rand(N, d)
-xm = np.copy(x)                       # 每个个体的历史最佳位置
-ym = np.zeros(d)                      # 种群的历史最佳位置
-fxm = np.zeros(N) + 125000            # 每个个体的历史最佳适应度
-fym = float('inf')                    # 种群历史最佳适应度
+v = np.random.rand(N, d)  # 初始化速度
+
+xm = np.copy(x)  # 每个个体的历史最佳位置
+ym = np.zeros(d)  # 种群的历史最佳位置
+fxm = np.zeros(N) + 125000  # 每个个体的历史最佳适应度
+fym = float('inf')  # 种群历史最佳适应度
 
 def obj_all(x, iter):
     """
-    目标函数，用于计算优化的目标值。
-
+    简化的目标函数，用于测试PSO算法。
     :param x: 优化变量数组
-    :return: 目标函数的计算结果
+    :param iter: 当前迭代次数（此例中未使用）
+    :return: 两个目标函数的值
     """
-
-    # 分割x以获得电价
-    price_buy = x[0:24] / 100
-    price_sell = x[24:48] / 100
-    EV_Q1 = x[48:72] / 100
-    EV_S1 = x[72:96] / 100
-    EV_2 = x[96:120] / 100
-    EV_3 = x[120:144] / 100
-    EV_4 = x[120:168] / 100
-
-
-    # 应用扩展函数
-    price_buy_expanded = expand_array(price_buy)
-    price_sell_expanded = expand_array(price_sell)
-    # EV_Q1_expanded = expand_array(EV_Q1)
-    # EV_S1_expanded = expand_array(EV_S1)
-    # EV_2_expanded = expand_array(EV_2)
-    # EV_3_expanded = expand_array(EV_3)
-    # EV_4_expanded = expand_array(EV_4)
-
-    #调用EVload
-    EVloadflow, EVloadmic = EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4) # 输入是24小时的 输出是48
-
-    # 调用MGO函数
-    F1, Pnet_mic, Pnet, Psg = MGO(price_buy_expanded, price_sell_expanded, EVloadmic) # Fdown是成本 输入输出都是48
-
-    #调用潮流
-    F2 = powerflow(EVloadflow, Pnet_mic, Pnet, Psg)
-
+    # 假设x是一个一维数组，我们只取第一个元素进行计算
+    F1 = x[0] ** 2
+    F2 = (x[0] - 2) ** 2
     return F1, F2
 
 
@@ -193,10 +136,13 @@ for iter in range(ger):
 df = pd.DataFrame(pareto_front, columns=['Objective 1', 'Objective 2'])
 # 设置文件路径
 csv_file_path = 'data/pareto_front.csv'  # 注意去掉了开头的 '/', 使路径相对于当前工作目录
+
 # 确保目录存在
 os.makedirs(os.path.dirname(csv_file_path), exist_ok=True)
+
 # 保存到CSV
 df.to_csv(csv_file_path, index=False)
+
 print(f"File saved to {csv_file_path}")
 
 # 首先提取 F1 和 F2 的值

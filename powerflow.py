@@ -13,9 +13,12 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
         # 获取当前小时的电动汽车负荷
         Pev_i = EVload[i]
         # 更新bus字典中的Pd和Qd
-        # 假设nodedata_dict[i]是一个二维数组或类似结构，其中包含了当前小时所有节点的Pd和Qd值
-        bus["Pd"] = mapped_nodedata_dict[i][:, 1]  # 更新Pd为nodedata_dict的第2列
-        bus["Qd"] = mapped_nodedata_dict[i][:, 2]  # 更新Qd为nodedata_dict的第3列
+        # 假设nodedata_dict[i]其中包含了当前小时所有节点的Pd和Qd值 24h
+        # 通过将i除以2并向下取整来调整索引，以适应mapped_nodedata_dict mapped_pv_dict, mapped_wt_dict 的键
+        adjusted_index = i // 2
+
+        bus["Pd"] = mapped_nodedata_dict[adjusted_index][:, 1]  # 更新Pd为nodedata_dict的第2列
+        bus["Qd"] = mapped_nodedata_dict[adjusted_index][:, 2]  # 更新Qd为nodedata_dict的第3列
         bus["Pd"] += Pev_i
 
         # 获取特定时间步长的发电机出力
@@ -24,6 +27,8 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
         target_gen_bus = [101, 201, 301, 401]
         # 使用node_mapping字典将节点编号映射为索引
         mapped_target_gen_bus = [node_mapping[bus1] for bus1 in target_gen_bus]
+
+
         # 遍历目标 gen_bus 值
         for idx, target_bus in enumerate(mapped_target_gen_bus):
             # 找到对应 gen_bus 的索引
@@ -32,7 +37,7 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
                 # 更新 Pg 值，假设Psg_i[idx]是对应于target_bus的发电输出
                 gen['Pg'][index] = Psg_i[idx]
         # 更新pv
-        for row in mapped_pv_dict[i]:
+        for row in mapped_pv_dict[adjusted_index]:
             pv_bus, pvi = row  # 第一列是 gen_bus，第二列是 capacity
             # 找到对应 gen_bus 的索引
             index = np.where(gen['gen_bus'] == pv_bus)[0]
@@ -40,7 +45,7 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
                 # 更新 Pg 值
                 gen['Pg'][index] = pvi
         # 更新wt
-        for row in mapped_wt_dict[i]:
+        for row in mapped_wt_dict[adjusted_index]:
             wt_bus, wti = row  # 第一列是 gen_bus，第二列是 capacity
             # 找到对应 gen_bus 的索引
             index = np.where(gen['gen_bus'] == wt_bus)[0]
@@ -49,7 +54,7 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
                 gen['Pg'][index] = wti
 
         # 初始化status数组，默认所有连接都是激活的，即状态为1
-        branch['status'] = np.ones_like(branch['fbus'])
+        # branch['status'] = np.ones_like(branch['fbus'])
 
         # 更新微电网间功率，使用节点到索引的映射转换节点对
         # 定义节点对应的微电网关系
@@ -96,7 +101,7 @@ def powerflow(EVload, Pnet_mic, Pnet, Psg):
             (201, 2),
             (301, 3),
         ]
-        for node, mg_target in microgrid_relations:
+        for node, mg_target in grid_relations:
             # 使用node_mapping来获取源节点和目标节点的索引
             node_index = node_mapping[node]
             # 从Pnet获取对应微电网间的功率流

@@ -245,6 +245,9 @@ class PowerFlow():
         # 初始化注入功率
         S_Gen, S_load = self._make_Sin()
 
+        # 定义一个小的正则化参数
+        regularization_param = 1e-10  # 这个值可以根据需要调整
+
         # 迭代开始
         lnum = 0
         while True:
@@ -253,6 +256,9 @@ class PowerFlow():
             # 计算功率不平衡和雅可比矩阵
             Fx, ai, bi, ei, fi = self._make_fx(self.V_nr, typekey)
             Jac = self._make_Jac(ai, bi, ei, fi, self.Ybus.real, self.Ybus.imag, typekey)
+
+            # 应用正则化：向雅可比矩阵的对角线元素添加正则化参数 防止奇异矩阵
+            np.fill_diagonal(Jac, Jac.diagonal() + regularization_param)
 
             # 求解增量
             delta = np.linalg.solve(Jac, -Fx)
@@ -271,7 +277,7 @@ class PowerFlow():
                 print("[warn]: Please Mind! The N-R did not converge!!")
                 break  # 未能收敛，跳出循环
 
-        return None, self.V_nr
+        return 1000, self.V_nr
 
 
 def Res2Excel_bus(PF, filename, sheetname):

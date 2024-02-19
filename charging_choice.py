@@ -22,7 +22,7 @@ class CommuterChargingChoiceCalculator:
 
     def calculate_private_charging_cost(self):
         # 选择社区价格数组0-8和20-23中最高的6个数相加
-        night_prices = np.concatenate((C_buy[0:8], C_buy[20:24]))  # 不需要使用np.concatenate
+        night_prices = np.concatenate((C_buy[0:8], C_buy[20:24]))
         highest_prices = np.sort(night_prices)[-6:]
         return np.sum(highest_prices)
 
@@ -33,19 +33,19 @@ class CommuterChargingChoiceCalculator:
         return min_sum
     def calculate_workslow_charging_cost(self):
         # 选择社区价格数组9-19中最高的6个数相加
-        night_prices = np.concatenate(self.work_slowprices[9:19])
-        highest_prices = np.sort(night_prices)[-6:]
+        day_prices = np.sort(self.work_slowprices[9:19])[-6:]
+        highest_prices = np.sum(day_prices)
         return np.sum(highest_prices)
     def calculate_workslow_charging_cost1(self):
         # 选择社区价格数组9-19中最高的6个数相加
-        night_prices = np.concatenate(self.work_slowprices1[9:19])
-        highest_prices = np.sort(night_prices)[-6:]
+        day_prices = np.sort(self.work_slowprices[9:19])[-6:]
+        highest_prices = np.sum(day_prices)
         return np.sum(highest_prices)
 
     def calculate_workslow_charging_cost2(self):
         # 选择社区价格数组9-19中最高的6个数相加
-        night_prices = np.concatenate(self.work_slowprices2[9:19])
-        highest_prices = np.sort(night_prices)[-6:]
+        day_prices = np.sort(self.work_slowprices[9:19])[-6:]
+        highest_prices = np.sum(day_prices)
         return np.sum(highest_prices)
 
     def calculate_choices(self):
@@ -72,7 +72,7 @@ class CommuterChargingChoiceCalculator:
 
         # 根据不同群体计算充电选择
         for owner_group, fraction in [('group1', 1 / 3), ('group2', 1 / 6), ('group3', 1 / 6), ('group4', 1 / 3)]:
-            num_owners_in_group = int(decision_making_owners * fraction)
+            num_owners_in_group = decision_making_owners * fraction
 
             if owner_group == 'group1':
                 # 四种选择
@@ -109,12 +109,15 @@ class CommuterChargingChoiceCalculator:
 
 
 class ChargingManager:
-    def __init__(self, MGQ1, MGS1, MG2, MG3, MG4):
-        self.MGQ1 = MGQ1
-        self.MGS1 = MGS1
-        self.MG2 = MG2
-        self.MG3 = MG3
-        self.MG4 = MG4
+    def __init__(self, MGQ1, MGS1, MG2, MG3, MG4):#元/kWh
+        self.P_slow = 7  # kW
+        self.P_quick = 42  # kW
+        self.DELTA_T = 0.5  # 每个时间段长度，30分钟
+        self.MGQ1 = MGQ1 * self.P_quick * self.DELTA_T # 每个步长价格
+        self.MGS1 = MGS1 * self.P_slow * self.DELTA_T
+        self.MG2 = MG2 * self.P_slow * self.DELTA_T
+        self.MG3 = MG3 * self.P_slow * self.DELTA_T
+        self.MG4 = MG4 * self.P_slow * self.DELTA_T
         # 创建节点到索引的映射
         self.node_mapping = node_mapping
         # 初始化向量
@@ -184,12 +187,14 @@ class ChargingManager:
         self.charging_home_matrix = np.zeros((48, 80))
         self.charging_work_slow_matrix = np.zeros((48, 80))
         self.charging_work_quick_matrix = np.zeros((48, 40))
+        # 调用计算车主选择
+        self.calculate_charging_distribution()
 
         # 用初始状态向量乘以每个转移矩阵
         for t, matrix in transition_matrices.items():
             idx = int(t * 2)  # 将时间转换为索引
-            self.charging_home_matrix[idx, :] = np.dot(matrix, self.charging_home)
-            self.charging_work_slow_matrix[idx, :] = np.dot(matrix, self.charging_work_slow)
+            self.charging_home_matrix[idx, :] = np.dot(self.charging_home, matrix)
+            self.charging_work_slow_matrix[idx, :] = np.dot(self.charging_work_slow, matrix)
 
         # 截取前40列
         self.charging_home_matrix = self.charging_home_matrix[:, :40]
@@ -244,10 +249,26 @@ class ChargingManager:
 
             # 分配快充数量到选定时间点
             for time_idx in selected_indices:
-                self.charging_work_quick_matrix[idx, time_idx] = num_quick_charging / num_slots
+                self.charging_work_quick_matrix[time_idx, idx] = num_quick_charging / num_slots
 
         # 输出三个矩阵
         return self.charging_home_matrix, self.charging_work_slow_matrix, self.charging_work_quick_matrix
+
+
+# # 实例调用
+# # 设置随机种子，以确保每次生成的随机数相同
+# np.random.seed(42)
+#
+# # 生成5个长度为24的随机数组，并将它们赋值给对应的变量
+# EV_Q1 = np.random.uniform(0.2205, 2, (24,))
+# EV_S1 = np.random.uniform(0.2205, 2, (24,))
+# EV_2 = np.random.uniform(0.2205, 2, (24,))
+# EV_3 = np.random.uniform(0.2205, 2, (24,))
+# EV_4 = np.random.uniform(0.2205, 2, (24,))
+#
+# a = ChargingManager(EV_Q1, EV_S1, EV_2, EV_3, EV_4)
+# home, works, workq = a.calculate_vehicle_distribution()
+# print(home)
 
 
 

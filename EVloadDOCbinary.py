@@ -1,5 +1,4 @@
 from docplex.mp.model import Model
-from docplex.mp.conflict_refiner import ConflictRefiner
 import numpy as np
 from charging_choice import ChargingManager
 from gridinfo import (end_points, nodes, node_mapping, transition_matrices, nodedata_dict,
@@ -19,69 +18,64 @@ class EVChargingOptimizer:
 
         model = Model("EVChargingOptimization")
 
-        # 决策变量
-        MAX_EV = max(community_vehicles_distribution) # 最多车
-        charge = model.integer_var_list(self.N_SLOTS, lb=0, ub=MAX_EV, name="charge")
-        discharge = model.integer_var_list(self.N_SLOTS, lb=0, ub=MAX_EV, name="discharge")
-        # 引入非负松弛变量,没有完全满足的对每个时段t
-        slack_EV = {t: model.continuous_var(name=f"slack_{t}", lb=0) for t in range(self.N_SLOTS)}
+        # 决策变量：每个时隙每辆车的充电状态（-1=放电, 0=不操作, 1=充电）
+        charge = model.binary_var_matrix(self.N_SLOTS, max(community_vehicles_distribution), name="charge")
+        discharge = model.binary_var_matrix(self.N_SLOTS, max(community_vehicles_distribution), name="discharge")
 
         # 约束条件
         constraints = []
 
         # 约束1：每个时隙充电或放电的车辆数不超过该时段车辆数
         for t in range(self.N_SLOTS):
-            constraints.append(model.sum(charge[t] + discharge[t]) <= community_vehicles_distribution[t])
+            constraints.append(model.sum(charge[t, i] + discharge[t, i]
+                                         for i in range(community_vehicles_distribution[t]))
+                               <= community_vehicles_distribution[t])
+            for i in range(community_vehicles_distribution[t], max(community_vehicles_distribution)):
+                # 对于超出该时间段实际车辆数的索引，此时车不存在，强制充电和放电变量为0
+                constraints.append(charge[t, i] == 0)
+                constraints.append(discharge[t, i] == 0)
 
         # 约束2：紧急需求车辆的充电要求
         for t in range(self.N_SLOTS):
             emergency_charging_needed = community_leaving_vehicles[t] * self.CAP_BAT_EV
             net_charging_provided = model.sum(
-                (charge[t_prime] - discharge[t_prime]) * self.P_slow * self.DELTA_T
-                for t_prime in range(t + 1))  # 包括当前时段
-            constraints.append(net_charging_provided + slack_EV[t] >= emergency_charging_needed)
-            constraints.append(slack_EV[t] <= emergency_charging_needed/3)
+                (charge[t_prime, i] - discharge[t_prime, i]) * self.P_slow * self.DELTA_T
+                for t_prime in range(t + 1)  # 包括当前时段
+                for i in range(community_vehicles_distribution[t_prime]))
+            constraints.append(net_charging_provided >= emergency_charging_needed)
 
         # 约束3：总充电量需满足所有车辆的累计需求
         total_charging_demand = sum(community_arriving_vehicles) * self.CAP_BAT_EV
-        # total_charging_demand_upper = sum(community_arriving_vehicles) * self.CAP_BAT_EV / 0.6 * 0.7
-        # total_charging_demand_lower = sum(community_arriving_vehicles) * self.CAP_BAT_EV / 0.6 * 0.4
-        total_charging_provided = model.sum(charge[t] * self.P_slow * self.DELTA_T
-                                            for t in range(self.N_SLOTS))
-        total_discharging_reduced = model.sum(discharge[t] * self.P_slow * self.DELTA_T
-                                              for t in range(self.N_SLOTS))
-        total_slcak = model.sum(slack_EV[t] for t in range(self.N_SLOTS))# 没满足的功率
+        total_charging_provided = model.sum(charge[t, i] * self.P_slow * self.DELTA_T
+                                            for t in range(self.N_SLOTS)
+                                            for i in range(community_vehicles_distribution[t]))
+        total_discharging_reduced = model.sum(discharge[t, i] * self.P_slow * self.DELTA_T
+                                              for t in range(self.N_SLOTS)
+                                              for i in range(community_vehicles_distribution[t]))
         # 确保总充电量（考虑放电减少的量）满足总需求
-        constraints.append(total_charging_provided - total_discharging_reduced + total_slcak == total_charging_demand)
+        constraints.append(total_charging_provided - total_discharging_reduced == total_charging_demand)
 
         # 约束4：累计放电量不超过之前累计的净充电量
         for t in range(0, self.N_SLOTS):
-            cumulative_charge_until_t = model.sum(charge[t_prime] * self.P_slow * self.DELTA_T
-                                                  for t_prime in range(t+1))
-            cumulative_discharge_until_t = model.sum(discharge[t_prime] * self.P_slow * self.DELTA_T
-                                                     for t_prime in range(t+1))
-            constraints.append(cumulative_discharge_until_t <= cumulative_charge_until_t)
+            for i in range(max(community_vehicles_distribution)):
+                cumulative_charge_until_t = model.sum(charge[t_prime, i] * self.DELTA_T for t_prime in range(t+1))
+                cumulative_discharge_until_t = model.sum(discharge[t_prime, i] * self.DELTA_T for t_prime in range(t+1))
+                constraints.append(cumulative_discharge_until_t <= cumulative_charge_until_t)
 
         model.add_constraints(constraints)
 
         # 计算每个时段的电网总负载，包括基本负载、充电增加和放电减少
         P_total = [community_P_BASIC[t] +
-                   model.sum(charge[t] * self.P_slow * self.DELTA_T) -
-                   model.sum(discharge[t] * self.P_slow * self.DELTA_T)
+                   model.sum(charge[t, i] * self.P_slow for i in
+                             range(community_vehicles_distribution[t])) -
+                   model.sum(discharge[t, i] * self.P_slow for i in
+                             range(community_vehicles_distribution[t]))
                    for t in range(self.N_SLOTS)]
 
-        # 在目标函数中加入惩罚项，惩罚未满足的紧急充电需求
-        penalty_weight = 1000  # 惩罚权重，根据问题规模和重要性调整
-        penalty_term = model.sum(slack_EV[t] * penalty_weight for t in range(self.N_SLOTS))
-
         # 目标函数：最小化电网负载的高峰与低谷之间的差异
-        model.minimize(model.max(P_total) - model.min(P_total) + penalty_term)
+        model.minimize(model.max(P_total) - model.min(P_total))
         #限制求解时间
         model.parameters.timelimit.set(120)
-
-        # refiner = ConflictRefiner()  # 先实例化ConflictRefiner类
-        # res = refiner.refine_conflict(model)  # 将模型导入该类，调用方法
-        # res.display()
         solution = model.solve()
 
         if solution:
@@ -89,22 +83,22 @@ class EVChargingOptimizer:
             net_power_per_half_hour = []
 
             for t in range(self.N_SLOTS):
-                # 计算每个时段的充电功率总和 功率不用乘步长
-                charging_power = solution.get_value(charge[t]) * self.P_slow / self.efficiency
+                # 计算每个时段的充电功率总和
+                charging_power = sum(solution.get_value(charge[t, i]) * self.P_slow / self.efficiency
+                                     for i in range(community_vehicles_distribution[t]))
                 # 计算每个时段的放电功率总和
-                discharging_power = solution.get_value(discharge[t]) * self.P_slow * self.efficiency
+                discharging_power = sum(solution.get_value(discharge[t, i]) * self.P_slow * self.efficiency
+                                        for i in range(community_vehicles_distribution[t]))
                 # 计算EV净功率：充电功率 - 放电功率
                 net_power = charging_power - discharging_power
 
                 # 将时间段和净功率添加到字典中
                 net_power_per_half_hour.append(net_power)
 
+            print("一次求解")
             return net_power_per_half_hour
         else:
-            # 如果没有找到解决方案，输出求解状态
-            solve_status = model.get_solve_status()
-            print(f"Solve status: {solve_status}")
-            print("Community EVLOAD no solution found.")
+            print("No solution found.")
             return {}
 
     def optimizeOfficeChargingPattern(self, slow_vehicles_distribution, slow_arriving_vehicles, slow_leaving_vehicles,
@@ -113,11 +107,10 @@ class EVChargingOptimizer:
 
         # 决策变量
         # 慢充车辆充电状态
-        MAX_EV = max(slow_vehicles_distribution)
-        slow_charge = model.integer_var_list(self.N_SLOTS, lb=0, ub=MAX_EV, name="charge")
-        slow_discharge = model.integer_var_list(self.N_SLOTS, lb=0, ub=MAX_EV, name="discharge")
-        # 引入非负松弛变量,没有完全满足的对每个时段t
-        slack_EV_work = {t: model.continuous_var(name=f"slack_{t}", lb=0) for t in range(self.N_SLOTS)}
+        slow_charge = model.binary_var_matrix(self.N_SLOTS, max(slow_vehicles_distribution), name="slow_charge")
+        # 慢充车辆放电状态
+        slow_discharge = model.binary_var_matrix(self.N_SLOTS, max(slow_vehicles_distribution), name="slow_discharge")
+        # 快充车辆没有变量因为只要在就一定充电
 
         # 约束条件
         constraints = []
@@ -126,52 +119,57 @@ class EVChargingOptimizer:
         # 慢充车辆约束
         for t in range(self.N_SLOTS):
             # 充电或放电的慢充车辆数不超过该时段车辆数
-            constraints.append(model.sum(slow_charge[t] + slow_discharge[t])
+            constraints.append(model.sum(slow_charge[t, i] + slow_discharge[t, i]
+                                         for i in range(slow_vehicles_distribution[t]))
                                <= slow_vehicles_distribution[t])
+            for i in range(slow_vehicles_distribution[t], max(slow_vehicles_distribution)):
+                # 对于超出该时间段实际车辆数的索引，强制充电和放电变量为0
+                constraints.append(slow_charge[t, i] == 0)
+                constraints.append(slow_discharge[t, i] == 0)
 
         # 约束2：紧急需求车辆的充电要求
         # 慢充车辆约束
         for t in range(self.N_SLOTS):
             emergency_charging_needed = slow_leaving_vehicles[t] * self.CAP_BAT_EV
             net_charging_provided = model.sum(
-                (slow_charge[t_prime] - slow_discharge[t_prime]) * self.P_slow * self.DELTA_T
-                for t_prime in range(t + 1))
-            constraints.append(net_charging_provided + slack_EV_work[t] >= emergency_charging_needed)
-            constraints.append(slack_EV_work[t] <= emergency_charging_needed / 3)
+                (slow_charge[t_prime, i] - slow_discharge[t_prime, i]) * self.P_slow * self.DELTA_T
+                for t_prime in range(t + 1)  # 包括当前时段
+                for i in range(slow_vehicles_distribution[t_prime]))
+            constraints.append(net_charging_provided >= emergency_charging_needed)
 
         # 约束3：总充电量需满足所有车辆的累计需求
         # 慢充车辆约束
         total_charging_demand = sum(slow_arriving_vehicles) * self.CAP_BAT_EV
-        total_charging_provided = model.sum(slow_charge[t] * self.P_slow * self.DELTA_T
-                                            for t in range(self.N_SLOTS))
-        total_discharging_reduced = model.sum(slow_discharge[t] * self.P_slow * self.DELTA_T
-                                              for t in range(self.N_SLOTS))
-        total_slcak = model.sum(slack_EV_work[t] for t in range(self.N_SLOTS))# 没满足的功率
+        total_charging_provided = model.sum(slow_charge[t, i] * self.P_slow * self.DELTA_T
+                                            for t in range(self.N_SLOTS)
+                                            for i in range(slow_vehicles_distribution[t]))
+        total_discharging_reduced = model.sum(slow_discharge[t, i] * self.P_slow * self.DELTA_T
+                                              for t in range(self.N_SLOTS)
+                                              for i in range(slow_vehicles_distribution[t]))
         # 确保总充电量（考虑放电减少的量）满足总需求
-        constraints.append(total_charging_provided - total_discharging_reduced + total_slcak == total_charging_demand)
+        constraints.append(total_charging_provided - total_discharging_reduced == total_charging_demand)
 
         # 约束4：累计放电量不超过之前累计的净充电量
+        # 约束4：累计放电量不超过之前累计的净充电量
         for t in range(self.N_SLOTS):
-            cumulative_charge_until_t = model.sum(slow_charge[t_prime] * self.P_slow * self.DELTA_T
-                                                  for t_prime in range(t + 1))  # 包括当前时段
-            cumulative_discharge_until_t = model.sum(slow_discharge[t_prime] * self.P_slow * self.DELTA_T
-                                                     for t_prime in range(t + 1))  # 包括当前时段
-            constraints.append(cumulative_discharge_until_t <= cumulative_charge_until_t)
+            for i in range(max(slow_vehicles_distribution)):  # 根据慢充车辆分布的最大值遍历
+                cumulative_charge_until_t = model.sum(
+                    slow_charge[t_prime, i] * self.DELTA_T for t_prime in range(t + 1))  # 包括当前时段
+                cumulative_discharge_until_t = model.sum(
+                    slow_discharge[t_prime, i] * self.DELTA_T for t_prime in range(t + 1))  # 包括当前时段
+                constraints.append(cumulative_discharge_until_t <= cumulative_charge_until_t)
 
         model.add_constraints(constraints)
 
         # 目标函数
-        # 在目标函数中加入惩罚项，惩罚未满足的紧急充电需求
-        penalty_weight = 1000  # 惩罚权重，根据问题规模和重要性调整
-        penalty_term = model.sum(slack_EV_work[t] * penalty_weight for t in range(self.N_SLOTS))
         # 计算每个时段的电网总负载，考虑慢充充电、慢充放电和快充充电
         P_total = [office_P_BASIC[t] +
-                   model.sum(slow_charge[t] * self.P_slow * self.DELTA_T
-                             - slow_discharge[t] * self.P_slow * self.DELTA_T) +
-                   fast_vehicles_distribution[t] * self.P_quick * self.DELTA_T # 快充车辆在场即充电
+                   model.sum(slow_charge[t, i] * self.P_slow - slow_discharge[t, i] * self.P_slow for i in
+                             range(slow_vehicles_distribution[t])) +
+                   fast_vehicles_distribution[t] * self.P_quick  # 快充车辆在场即充电
                    for t in range(self.N_SLOTS)]
 
-        model.minimize(model.max(P_total) - model.min(P_total) + penalty_term)
+        model.minimize(model.max(P_total) - model.min(P_total))
         # 设置求解时间限制为120秒
         model.parameters.timelimit.set(120)
 
@@ -183,9 +181,11 @@ class EVChargingOptimizer:
 
             for t in range(self.N_SLOTS):
                 # 计算每个时段的充电功率总和
-                charging_power = solution.get_value(slow_charge[t]) * self.P_slow / self.efficiency
+                charging_power = sum(solution.get_value(slow_charge[t, i]) * self.P_slow / self.efficiency
+                                     for i in range(slow_vehicles_distribution[t]))
                 # 计算每个时段的放电功率总和
-                discharging_power = solution.get_value(slow_discharge[t]) * self.P_slow * self.efficiency
+                discharging_power = sum(solution.get_value(slow_discharge[t, i]) * self.P_slow * self.efficiency
+                                        for i in range(slow_vehicles_distribution[t]))
                 # 计算EV净功率：充电功率 - 放电功率
                 net_power = (charging_power - discharging_power +
                              fast_vehicles_distribution[t] * self.P_quick / self.efficiency) #快充
@@ -194,7 +194,7 @@ class EVChargingOptimizer:
 
             return net_power_per_half_hour
         else:
-            print(" Office EVLOAD No solution found.")
+            print("No solution found.")
 
 
 def extract_charging_distribution(charging_home_matrix, charging_work_slow_matrix, charging_work_quick_matrix): # 48行
@@ -330,19 +330,9 @@ def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
         # Office节点
         if 100 <= node < 199:
             P_basic = P_basic_dict[node]
-            if (max(work_slow_charging_distribution.get(node, [0])) == 0
-                    and max(work_quick_charging_distribution.get(node, [0])) == 0):
+            if max(work_slow_charging_distribution.get(node, [0])) == 0:
                 # 如果没有慢充也没有快充车辆，跳过优化步骤
                 ev_load_vector = np.zeros(48)  # 48个半小时时段
-            elif max(work_slow_charging_distribution.get(node, [0])) == 0:
-                # 只有快充，直接计算
-                net_power_per_half_hour = []
-                for t1 in range(48):
-                    # 计算EV净功率
-                    net_power = (work_quick_charging_distribution.get(node, [0])[t1] * 42 / 0.9)  # 快充
-                    # 将时间段和净功率添加到字典中
-                    net_power_per_half_hour.append(net_power)
-                    ev_load_vector = net_power_per_half_hour
             else:
                 # 进行优化
                 ev_load_vector = optimize.optimizeOfficeChargingPattern(
@@ -397,8 +387,7 @@ def EVload(EV_Q1, EV_S1, EV_2, EV_3, EV_4):
 np.random.seed(42)
 
 # 生成5个长度为24的随机数组，并将它们赋值给对应的变量
-EV_Q1 = np.full(24, 0.001)
-#EV_Q1 = np.random.uniform(0.2205, 2, (24,))
+EV_Q1 = np.random.uniform(0.2205, 2, (24,))
 EV_S1 = np.random.uniform(0.2205, 2, (24,))
 EV_2 = np.random.uniform(0.2205, 2, (24,))
 EV_3 = np.random.uniform(0.2205, 2, (24,))

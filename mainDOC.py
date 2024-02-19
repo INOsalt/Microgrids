@@ -14,12 +14,6 @@ class TotalOptimizationManager:
         self.C_sellmic = C_sellmic
         self.model = Model(name="Microgrid Optimization Problem")
 
-        # 设置相对间隙容忍度为 0.01（1%）
-        self.model.parameters.mip.tolerances.mipgap = 0.05
-
-        # 设置绝对间隙容忍度为 0.0001
-        self.model.parameters.mip.tolerances.absmipgap = 1
-
     def setup(self):
         objective_all = 0
         for i in range(len(self.microgrids)):
@@ -55,7 +49,12 @@ class TotalOptimizationManager:
 
     def solve(self):
         # 求解问题
+        # 限制求解时间
+        self.model.parameters.timelimit.set(300)
         solution = self.model.solve(agent='local')
+        return solution
+
+
 
 
 
@@ -108,7 +107,7 @@ class TotalOptimizationManager:
 
         return Pgrid_out, Pgrid_in
 
-    def calculate_objective(self, C_re):
+    def calculate_objective(self):
         # 提取解决方案
         extracted_values = {}
         for var in self.model.iter_variables():
@@ -132,8 +131,8 @@ class TotalOptimizationManager:
 
             # 添加外电网购售成本
             for k in range(48):
-                Fdown += extracted_values.get(f'Pbuy_{grid_id}_{k}', 0) * C_buy[k]
-                Fdown += extracted_values.get(f'Psell_{grid_id}_{k}', 0) * C_sell[k]
+                Fdown += extracted_values.get(f'Pbuy_{grid_id}_{k}', 0) * expand_array(C_buy)[k]
+                Fdown += extracted_values.get(f'Psell_{grid_id}_{k}', 0) * expand_array(C_sell)[k]
 
             # 微电网群交易成本
             if self.num_microgrid > 1:
@@ -236,7 +235,7 @@ class Visualization:
 
     def plot_microgrid_charts(self, microgrid_id):
         # 为每个小时准备数据
-        hours = np.arange(1, 25)
+        hours = np.arange(48)
         Psg_data = np.array([self.extracted_values.get(f'Psg_{microgrid_id}_{k}', 0) for k in range(48)])
         Ppv_data = np.array([self.extracted_values.get(f'Ppv_{microgrid_id}_{k}', 0) for k in range(48)])
         Pwt_data = np.array([self.extracted_values.get(f'Pwt_{microgrid_id}_{k}', 0) for k in range(48)])
@@ -310,7 +309,7 @@ def MGO(C_buymic, C_sellmic, EVload):
     pcs_1 = 40
     POWER_1 = 20000  # 主网功率交换限制
     C_sg_1 = 0.7939  # 柴油轮机成本系数
-    POWER_MIC_1 = [0, 18000, 18000, 0] #1-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
+    POWER_MIC_1 = [0, 0, 18000, 0] #1-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
     POWER_SG_1 = 15000
     #======grid2========#
     id2 = 1
@@ -327,7 +326,7 @@ def MGO(C_buymic, C_sellmic, EVload):
     pcs_2 = 40  # 充/放电功率限制
     C_sg_2 = 0.7939  # 柴油轮机成本系数
     POWER_2 = 20000  # 主网功率交换限制
-    POWER_MIC_2 = [18000, 0, 16000, 16000] #2-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
+    POWER_MIC_2 = [0, 0, 0, 16000] #2-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
     POWER_SG_2 = 6000
     #=======grid3=========#
     # 商业区域电网
@@ -344,8 +343,8 @@ def MGO(C_buymic, C_sellmic, EVload):
     socmax_3 = 0.95  # 最大SOC
     pcs_3 = 40  # 充/放电功率限制
     C_sg_3 = 0.7939  # 柴油轮机成本系数
-    POWER_3 = 20000  # 主网功率交换限制
-    POWER_MIC_3 = [18000, 16000, 0, 16000] #3-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
+    POWER_3 = 0  # 主网功率交换限制
+    POWER_MIC_3 = [0, 16000, 0, 16000] #3-1234 #12 13 24 23 34 18000, 18000, 16000, 16000, 16000
     POWER_SG_3 = 6000
 
     # =======grid4=========#
@@ -394,7 +393,8 @@ def MGO(C_buymic, C_sellmic, EVload):
     #Pgrid_out, Pgrid_in = total_optimization_manager.calculate_grid_power_flows()
 
     # 获取目标函数的值
-    Fdown = total_optimization_manager.calculate_objective(C_re)
+    Fdown = total_optimization_manager.calculate_objective()
+    # Fdown = solution.get_objective_value()
     pnetmic_values_by_hour = total_optimization_manager.extract_pnetmic_values_by_hour()
     pnet_values_by_hour = total_optimization_manager.extract_pnet_values_by_hour()
     psg_values_by_hour = total_optimization_manager.extract_psg_values_by_hour()
@@ -405,13 +405,13 @@ def MGO(C_buymic, C_sellmic, EVload):
     # total_optimization_manager.print_optimization_results(solution)
     #
     # # 创建可视化实例
-    # visualization = Visualization(total_optimization_manager, [grid1, grid2, grid3], num_microgrid, total_optimization_manager.model)
+    # visualization = Visualization(total_optimization_manager, [grid1, grid2, grid3, grid4], num_microgrid, total_optimization_manager.model)
     # visualization.extract_solution_to_dict()  # 提取解决方案
     #
     # # 对每个微电网绘制图表
     # for microgrid_id in range(num_microgrid):
     #     visualization.plot_microgrid_charts(microgrid_id)
-    # #
+    #
     print("MGO计算结束")
     return Fdown, pnetmic_values_by_hour, pnet_values_by_hour, psg_values_by_hour # 长度48
 
@@ -419,13 +419,54 @@ def MGO(C_buymic, C_sellmic, EVload):
 
 
 #测试#==================
-#全局
-# C_buy = [0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
-#         0.82, 0.82, 0.82, 0.53, 0.53, 0.53, 0.82, 0.82, 0.82, 0.53, 0.53, 0.53]
+# #全局
+# C_buymic = expand_array([0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.53, 0.53, 0.53, 0.82, 0.82,
+#         0.82, 0.82, 0.82, 0.53, 0.53, 0.53, 0.82, 0.82, 0.82, 0.53, 0.53, 0.53])
 #
-# C_sell = [0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.42, 0.42, 0.42, 0.65, 0.65,
-#          0.65, 0.65, 0.65, 0.42, 0.42, 0.42, 0.65, 0.65, 0.65, 0.42, 0.42, 0.42]
-# Fdown = MGO(C_buy, C_sell)
+# C_sellmic = expand_array([0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.22, 0.42, 0.42, 0.42, 0.65, 0.65,
+#          0.65, 0.65, 0.65, 0.42, 0.42, 0.42, 0.65, 0.65, 0.65, 0.42, 0.42, 0.42])
+# EVload = {
+#     0: np.array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+#                  0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+#                  0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]),
+#     1: np.array([ 155.55555556,  155.55555556,  272.22222222,  303.33333333,
+#                   241.11111111,  241.11111111,  451.11111111,  451.11111111,
+#                   513.33333333,  513.33333333,  544.44444444,  544.44444444,
+#                   544.44444444,  482.22222222,  466.66666667,  458.88888889,
+#                   427.77777778,  280.        ,  132.22222222,   62.22222222,
+#                    31.11111111,    0.        ,    0.        ,    0.        ,
+#                     0.        ,    0.        ,    0.        ,  217.77777778,
+#                   412.22222222,  490.        ,  490.        ,  490.        ,
+#                   513.33333333,  513.33333333,  108.5       ,  108.5       ,
+#                   -42.31111111,  -42.31111111, -243.52222222, -290.18888889,
+#                   -64.86666667,  -64.86666667,  256.66666667,  284.43333333,
+#                   380.72222222,  380.72222222,  168.46666667,   12.91111111]),
+#     2: np.array([ 530.36666667,  534.8       ,  704.43333333,  797.76666667,
+#                   856.64444444,  831.83333333,  931.46666667,  925.55555556,
+#                  1050.        , 1050.        , 1042.22222222, 1043.7       ,
+#                  1020.36666667, 1004.81111111,  821.1       ,  852.21111111,
+#                   606.66666667,  474.44444444,  195.92222222,  108.88888889,
+#                    70.        ,    0.        ,    0.        ,    0.        ,
+#                     0.        ,    0.        ,    0.        ,  737.02222222,
+#                   951.84444444,  809.58888889,  967.4       ,  965.92222222,
+#                   777.38888889,  822.57777778,  125.84444444,   69.53333333,
+#                  -242.82222222, -242.82222222, -433.3       , -436.25555556,
+#                  -285.75555556, -290.57777778,    1.78888889,  109.58888889,
+#                   803.67777778,  827.01111111,  562.17777778,  568.47777778]),
+#     3: np.array([ 311.11111111,  311.11111111,  311.11111111,  311.11111111,
+#            311.11111111,  396.66666667,  544.44444444,  544.44444444,
+#            544.44444444,  544.44444444,  544.44444444,  544.44444444,
+#            528.88888889,  536.66666667,  427.77777778,  437.03333333,
+#            241.11111111,  233.33333333,   70.        ,   46.66666667,
+#            23.33333333,    0.        ,    0.        ,    0.        ,
+#             0.        ,    0.        ,    0.        ,  256.66666667,
+#            451.11111111,  396.66666667,  497.77777778,  497.77777778,
+#            318.88888889,  318.88888889,   94.81111111,   85.55555556,
+#          -170.1       , -170.1       , -346.5       , -346.5       ,
+#           -67.12222222,  -29.32222222,   62.22222222,   54.44444444,
+#           458.88888889,  458.88888889,  318.88888889,  320.36666667])
+# }
+# Fdown = MGO(C_buymic, C_sellmic, EVload)
 # print(Fdown)
 
 # #全局
