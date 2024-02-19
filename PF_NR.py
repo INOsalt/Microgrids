@@ -246,7 +246,7 @@ class PowerFlow():
         S_Gen, S_load = self._make_Sin()
 
         # 定义一个小的正则化参数
-        regularization_param = 1e-10  # 这个值可以根据需要调整
+        regularization_param = 1e-6  # 这个值可以根据需要调整
 
         # 迭代开始
         lnum = 0

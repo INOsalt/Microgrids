@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-
+from gridinfo import initial_EV
 
 def read_and_multiply_matrices(input_dir, output_dir, step=10):
     # 确保输出目录存在
@@ -79,8 +79,14 @@ initial_state = [0., 0., 0., 0., 0., 0., 0., 1000., 1000., 1000.,
                  0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
                  0., 0., 0., 0., 0., 0., 0., 0., 0.,  0.]
 
-tm_folder = 'TMhalfhour'
-output_file = 'SVhalfhour.csv'
+# tm_folder = 'TMhalfhour'
+# output_file = 'SVhalfhour.csv'
+#
+# calculate_state_vectors(initial_state, tm_folder, output_file)
 
-calculate_state_vectors(initial_state, tm_folder, output_file)
+tm_folder = 'TMhalfhour'
+output_file = 'SVhalfhour_pe.csv'
+
+calculate_state_vectors(initial_EV, tm_folder, output_file)
+
 

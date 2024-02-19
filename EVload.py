@@ -13,7 +13,7 @@ power_6_to_39 = 7  # kW 慢充
 folder_path = 'TM'  # 你需要替换为实际的路径
 
 # 初始化一个空字典来存储矩阵
-transition_matrices = {}
+ftransition_matrices = {}
 # 生成步长为0.05的序列从0到24
 keys = np.arange(0, 24.05, 0.05)
 

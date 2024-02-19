@@ -1,4 +1,5 @@
 import numpy as np
+import itertools
 import matplotlib.pyplot as plt
 from gridinfo import (C_buy, C_sell, start_points, end_points, microgrid_id, EV_penetration, nodes, node_mapping,
                       transition_matrices)
@@ -7,7 +8,7 @@ class CommuterChargingChoiceCalculator:
     def __init__(self, home_prices, work_prices, work_slowprices, work_slowprices1, work_slowprices2):
         self.home_prices = home_prices
         self.work_prices = work_prices
-        self.num_owners = EV_penetration * 0.1
+        self.num_owners = EV_penetration * 0.1 #ChargingManager 有不需要充电的车，需要互补
         self.work_slowprices1 = work_slowprices1
         self.work_slowprices2 = work_slowprices2
         self.work_slowprices = work_slowprices
@@ -113,6 +114,7 @@ class ChargingManager:
         self.P_slow = 7  # kW
         self.P_quick = 42  # kW
         self.DELTA_T = 0.5  # 每个时间段长度，30分钟
+        self.num_owners_not_charging = EV_penetration * 0.9
         self.MGQ1 = MGQ1 * self.P_quick * self.DELTA_T # 每个步长价格
         self.MGS1 = MGS1 * self.P_slow * self.DELTA_T
         self.MG2 = MG2 * self.P_slow * self.DELTA_T
@@ -124,6 +126,8 @@ class ChargingManager:
         self.charging_home = np.zeros(len(nodes)*2) # 80
         self.charging_work_slow = np.zeros(len(nodes)*2) #80
         self.charging_work_quick = np.zeros(len(nodes)) #40
+        # 不充电车
+        self.not_charging = np.zeros(len(nodes) * 2)
 
         # 初始化特殊点充电车辆数记录字典
         self.special_slow_charging_counts = {201: 0, 207: 0, 205: 0, 301: 0, 311: 0, 312: 0}
@@ -140,6 +144,8 @@ class ChargingManager:
 
             # 根据映射更新向量
             idx = self.node_mapping[start_point]
+            # 不充电车
+            self.not_charging[idx] = self.num_owners_not_charging
             self.charging_home[idx] = choices['charging_at_home_private'] + choices['charging_at_home_public']
             # 更新慢充向量
             self.charging_work_slow[idx] += (choices['charging_at_work_slow'] +
@@ -186,19 +192,27 @@ class ChargingManager:
         # 初始化结果矩阵
         self.charging_home_matrix = np.zeros((48, 80))
         self.charging_work_slow_matrix = np.zeros((48, 80))
+        self.not_charging_matrix = np.zeros((48, 80))
         self.charging_work_quick_matrix = np.zeros((48, 40))
         # 调用计算车主选择
         self.calculate_charging_distribution()
 
-        # 用初始状态向量乘以每个转移矩阵
-        for t, matrix in transition_matrices.items():
-            idx = int(t * 2)  # 将时间转换为索引
-            self.charging_home_matrix[idx, :] = np.dot(self.charging_home, matrix)
-            self.charging_work_slow_matrix[idx, :] = np.dot(self.charging_work_slow, matrix)
+        # 首先，初始化每个状态矩阵的第一行为对应的初始状态
+        self.charging_home_matrix[0, :] = self.charging_home
+        self.charging_work_slow_matrix[0, :] = self.charging_work_slow
+        self.not_charging_matrix[0, :] = self.not_charging
+
+        # 遍历每个转移矩阵，从第二行开始更新状态矩阵
+        # 迭代变量从`t`改为`i`和`matrix`，并且从1开始迭代，因为第0行已经设置
+        for i, (t, matrix) in enumerate(itertools.islice(transition_matrices.items(), 0, 47), start=1):
+            self.charging_home_matrix[i, :] = np.dot(self.charging_home_matrix[i - 1, :], matrix)
+            self.charging_work_slow_matrix[i, :] = np.dot(self.charging_work_slow_matrix[i - 1, :], matrix)
+            self.not_charging_matrix[i, :] = np.dot(self.not_charging_matrix[i - 1, :], matrix)
 
         # 截取前40列
         self.charging_home_matrix = self.charging_home_matrix[:, :40]
         self.charging_work_slow_matrix = self.charging_work_slow_matrix[:, :40]
+        self.not_charging_matrix = self.not_charging_matrix[:, :40]
 
         # 根据special_slow_charging_counts修正self.charging_work_slow_matrix和self.charging_home_matrix
         # 计算特殊慢充的比例
@@ -252,7 +266,7 @@ class ChargingManager:
                 self.charging_work_quick_matrix[time_idx, idx] = num_quick_charging / num_slots
 
         # 输出三个矩阵
-        return self.charging_home_matrix, self.charging_work_slow_matrix, self.charging_work_quick_matrix
+        return self.charging_home_matrix, self.charging_work_slow_matrix, self.charging_work_quick_matrix, self.not_charging_matrix
 
 
 # # 实例调用

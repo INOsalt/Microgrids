@@ -30,12 +30,11 @@ initial_EV[starts] = EV_penetration
 
 # 读取转移矩阵
 # 设置包含CSV文件的文件夹路径
-folder_path = 'TMhalfhour'  # 你需要替换为实际的路径
+folder_path = 'TMhalfhour'
 
 # 初始化一个空字典来存储矩阵
 transition_matrices = {}
-# 生成步长为0.05的序列从0到24
-keys = np.arange(0, 24, 0.5)
+keys = np.arange(0, 48)
 
 # 遍历文件夹中的所有文件
 i = 0
